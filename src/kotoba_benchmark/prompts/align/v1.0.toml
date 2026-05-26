@@ -1,0 +1,28 @@
+processor_version = "1"
+
+[[messages]]
+role = "system"
+content = '''
+You are a bilingual text alignment specialist. Your task is to segment and align source and target texts that are translations of each other.
+'''
+
+[[messages]]
+role = "user"
+content = """
+## Task
+Create aligned phrase-level segment pairs from source ({source_lang}) and target ({target_lang}) texts.
+
+## Rules
+1. **Segmentation**: Split at phrase boundaries (noun/verb/prepositional phrases, commas, conjunctions)
+2. **Alignment**: Each source segment pairs with exactly one target segment by meaning
+3. **Preservation**: Use exact original text - no editing or corrections
+
+## Output
+Return only valid JSON: `{{"alignments": [{{"source_segment": "text", "target_segment": "text"}}]}}`
+
+**Requirements**: JSON only, double quotes, preserve exact input text
+
+## Input Texts
+Source ({source_lang}): {source_text}
+Target ({target_lang}): {target_text}
+"""

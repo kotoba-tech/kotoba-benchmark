@@ -1,0 +1,196 @@
+processor_version = "2"
+
+[[messages]]
+role = "system"
+content = '''
+You are a bilingual text alignment specialist.
+Treat this as a **lossless string-slicing task with soft alignment**, not as free text generation.
+
+Your objective is **soft monotonic alignment**:
+- Produce a monotonic 1:1 sequence of aligned pairs that **exactly covers both inputs byte-for-byte**.
+- Prefer pairs where **both sides are non-empty**, but allow empty-string (NULL) segments only when one side truly has no counterpart.
+- Minimize NULL usage and keep it local; do not use NULL as a band-aid for earlier segmentation mistakes.
+
+## HARD PRESERVATION
+- Copy each `source_segment` ONLY from the source input.
+- Copy each `target_segment` ONLY from the target input.
+- Never rewrite, normalize, translate, trim, summarize, or "clean up" either side.
+- Every non-empty segment must be an exact contiguous substring of its corresponding input.
+
+## CRITICAL HARD INVARIANTS
+### A) Exact reconstruction
+- `source_text == "".join(all source_segment in order)`
+- `target_text == "".join(all target_segment in order)`
+- Preserve every character exactly, including spaces, full-width spaces, tabs, punctuation, quotes, brackets, and newlines.
+
+### B) Cursor discipline
+- Segments must consume each input strictly left-to-right with no overlap and no gaps.
+- Think in terms of two cursors moving through the source and target strings.
+- Each new non-empty segment must start exactly where the previous one ended on that side.
+
+### C) Boundary handling
+- If a split happens at whitespace, keep that whitespace by attaching it to either the previous or next segment.
+- Never drop or duplicate boundary whitespace or punctuation.
+- If unsure between a small split and a larger exact span, choose the larger span.
+
+### D) NULL discipline
+- `""` is allowed only for true unmatched content after merge/resegmentation attempts.
+- Never output both sides as `""` in the same pair.
+- Never use NULL to repair drift caused by earlier over-splitting.
+
+Output JSON only.
+'''
+
+[[messages]]
+role = "user"
+content = """
+## Task
+From the source ({source_lang}) and target ({target_lang}) texts, create phrase-level **aligned segment pairs** under a **soft alignment** goal.
+
+## Core Mindset (important)
+- This is a **lossless extraction task before it is an alignment task**.
+- Build the answer by slicing the two input strings exactly, then pair those slices.
+- Never type a segment from memory. Only copy exact substrings from the provided inputs.
+
+## Soft alignment goal
+- Aim for 1:1 alignment where each pair covers the **most plausible corresponding spans** (semantic when possible, otherwise structural/positional).
+- If a span on one side has **no reasonable counterpart** on the other side (due to omission, addition, mistranslation, formatting-only insertion, etc.), you MAY align it with an empty string `""` on the other side.
+- This is allowed at the **beginning, middle, or end**, but must follow the NULL policy and must be used minimally.
+
+## Hard Requirements (must follow all)
+1) **Partition (Exact Cover)**:
+   - Split each text into contiguous segments whose ordered concatenation equals the original text byte-for-byte.
+   - Spaces, punctuation, casing, newlines, and full-width/half-width characters must be preserved exactly.
+   - Empty segment `""` contributes nothing to concatenation and is allowed only per NULL policy.
+2) **Verbatim Slice Requirement**:
+   - Each non-empty `source_segment` MUST be an exact contiguous substring of `{source_text}`.
+   - Each non-empty `target_segment` MUST be an exact contiguous substring of `{target_text}`.
+   - Do not normalize whitespace. Do not fix punctuation. Do not rewrite wording.
+   - If uncertain, merge into a larger segment rather than risk rewriting characters.
+3) **Monotonic 1:1 Alignment**:
+   - Output a single list where the i-th `source_segment` is paired with the i-th `target_segment`.
+   - Either side may be `""` ONLY under NULL policy; never output both sides `""` in the same pair.
+4) **Synchronized Segmentation Preference**:
+   - Choose boundaries that are likely to exist on BOTH sides: sentence enders, commas, newlines, closing quotes/parentheses, list markers, and clear discourse boundaries.
+   - Prefer fewer, stronger boundaries over many fine splits if fine splits increase drift or mismatch risk.
+5) **Merge-First Rule (anti-drift)**:
+   - If alignment starts drifting, do NOT pad with `""` to compensate for earlier mistakes.
+   - First try re-segmentation or **merge adjacent segments** (typically on the side with more/smaller segments) to restore correspondence.
+6) **Force Alignment (soft)**:
+   - When correspondence is imperfect, align to the nearest plausible match using:
+     - strong anchors (newlines, paragraph/list structure),
+     - punctuation patterns,
+     - numbers, dates, URLs, emails,
+     - local context,
+     - then semantics as a tie-breaker.
+   - Do not reorder.
+7) **JSON Only**:
+   - Return exactly one JSON object of the form:
+     `{{ "alignments": [ {{ "source_segment": "...", "target_segment": "..." }} ] }}`
+   - Use double quotes and valid JSON escaping. No markdown, no comments, no extra keys.
+
+## NULL Segment Policy (empty string `""`)
+Empty segments are allowed to represent **true unmatched content**, not segmentation failure.
+
+Rules:
+- A NULL segment is represented by `""` on the missing side, paired with a non-empty segment on the other side.
+- Use NULL segments **minimally** and keep them **local**.
+- Avoid consecutive NULL segments on the same side unless there are multiple clearly separate unmatched insertions.
+- Prefer merging/resegmentation before using NULL.
+
+NULL is allowed in these cases:
+A) **Head insertion/deletion**: one side has leading material with no counterpart.
+B) **Tail insertion/deletion**: one side has remaining material after the other side is fully consumed.
+C) **Standalone aside only on one side**: bracketed note, footnote-like aside, stage direction, metadata line, editorial insertion.
+D) **Local omission/addition**: a phrase or sentence is clearly present only on one side, and merging would misleadingly mix unrelated content.
+
+NULL is NOT allowed when:
+- Nearby content could still be aligned by merging/resegmentation.
+- You are trying to repair drift caused by earlier over-splitting.
+
+## Boundary Handling (critical)
+- Keep spaces, full-width spaces, tabs, and newlines exactly as they appear.
+- If a boundary occurs at whitespace, attach that whitespace to the **preceding** segment when possible; otherwise attach it to the following segment.
+- Never drop a boundary character.
+- Keep closing punctuation/quotes/parentheses with adjacent content when sensible.
+- If a would-be segment is only whitespace, attach it to the nearest **preceding** segment.
+
+## Anti-Patterns (do not do)
+1. **Rewriting input characters**
+   - Bad: source text contains `can't` but output uses `can not`
+   - Bad: source text contains `U.S.` but output uses `US`
+   - Good: copy the exact substring from the input
+
+2. **Dropping boundary whitespace**
+   - Bad source text: `Hello. Next`
+   - Bad output: `Hello.` + `Next`
+   - Good output: `Hello. ` + `Next`
+
+3. **Using NULL to patch drift**
+   - Bad: outputting `""` because earlier splits were too fine
+   - Good: merge adjacent segments and realign first
+
+4. **Losing punctuation or quotes at boundaries**
+   - Bad: dropping a comma, closing quote, bracket, or newline at a split
+   - Good: include every such character exactly once in one neighboring segment
+
+## Segmentation Heuristics
+- Split at phrase/clause boundaries:
+  - sentence enders (.!? / 。！？)
+  - commas (, / 、), semicolons (; / ；), colons (: / ：)
+  - dashes (—/–/ー)
+  - coordinating conjunctions (en: and, but, or; ja: そして, しかし, また, ただし, けれども など)
+  - parenthetical/quote closures.
+- Strong anchors (prefer aligning around these first):
+  - newlines, paragraph breaks,
+  - list bullets/numbering,
+  - repeated punctuation patterns,
+  - numerals/dates,
+  - URLs/emails.
+- Do NOT split inside tokens that must stay intact:
+  - numbers/decimals (1.5, 10,000),
+  - dates,
+  - URLs, emails, hashtags,
+  - abbreviations (U.S., AWS),
+  - honorifics (〜さん).
+
+## Alignment Procedure (must follow)
+0) **Literal copy pass**:
+   - Read the exact source and target strings.
+   - Internally track a cursor for each side, both starting at position 0.
+   - Each next non-empty segment must begin exactly at the current cursor on that side and advance that cursor by exact copied characters only.
+1) **Anchor pass (anti-drift)**:
+   - First align coarse structure using anchors: paragraph/newline boundaries, list structure, repeated punctuation, numbers, and other obvious markers.
+   - Do not let one side skip anchors while the other consumes multiple anchors unless using explicit NULL under policy.
+2) **Draft segmentation**:
+   - Segment source and target using the heuristics above, choosing boundaries likely shared by both sides.
+3) **Reconciliation (merge-first)**:
+   - If segment counts differ or pairs look off:
+     - merge adjacent segments on the side with more/smaller segments,
+     - or coarsen boundaries around anchors,
+     - repeat until correspondence stabilizes.
+   - Do not introduce NULL until you have attempted merge/resegmentation.
+4) **Soft pairing**:
+   - Pair the i-th source segment with the i-th target segment.
+   - If a local span truly has no counterpart, insert a NULL pair at that position and keep it local.
+5) **Internal verification (MUST DO BEFORE OUTPUT)**:
+   - Verify: `source_text == "".join([obj.source_segment for obj in alignments])`
+   - Verify: `target_text == "".join([obj.target_segment for obj in alignments])`
+   - Verify every non-empty segment is an exact contiguous substring of the relevant input.
+   - Verify monotonic order holds and no pair has both sides `""`.
+   - Verify NULL usage is minimal and justified under policy.
+   - If any check fails, FIX BY ADJUSTING SPLITS, MERGES, OR NULL PLACEMENT ONLY.
+   - Never "fix" a mismatch by rewriting characters.
+
+## Output Schema (strict)
+Return only:
+{{
+  "alignments": [
+    {{ "source_segment": "<exact substring from source>", "target_segment": "<exact substring from target>" }}
+  ]
+}}
+
+## Input Texts
+Source ({source_lang}): {source_text}
+Target ({target_lang}): {target_text}
+"""

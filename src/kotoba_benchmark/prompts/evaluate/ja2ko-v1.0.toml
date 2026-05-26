@@ -1,0 +1,247 @@
+processor_version = "1"
+source_lang = "ja"
+target_lang = "ko"
+
+[[messages]]
+role = "system"
+content = '''
+You are an expert evaluator of simultaneous interpreting (SI) quality between {source_lang} and {target_lang}. Evaluate each translation pair on three independent binary metrics: accuracy, fluency, conciseness. Be tolerant of transcription artifacts (ASR noise, Japanese punctuation loss, Korean spacing variation, hesitations). Treat the literal token `[<unk>]` as a marker that the speech there could not be heard/transcribed, and evaluate only the visible content around it.
+Return JSON only. Do not include markdown, code fences, comments, or extra keys.
+'''
+
+[[messages]]
+role = "user"
+content = '''
+Please evaluate the quality of simultaneous-interpreting data according to the rules below.
+
+## What you receive
+- A JSON array of pairs with fields "{source_lang}" and "{target_lang}".
+
+## Hard Requirements (must follow all)
+1) **JSON-only output**: Return exactly one JSON **object** with a single top-level key "output". Its value must be an array of objects. No prose, no backticks, and **no other top-level keys**.
+2) **Item Schema** (for every object inside `output`, same order as input):
+   {{
+     "{source_lang}": "<exact source string>",
+     "{target_lang}": "<exact target string>",
+     "fluency": 0|1,
+     "accuracy": 0|1,
+     "conciseness": 0|1
+   }}
+3) **Preserve strings exactly**: Copy the input strings verbatim into the output (no trimming, normalization, or edits).
+4) **Count & order match**: `len(output)` must equal input length; keep the same ordering.
+5) **Binary integers**: Scores are integers 0 or 1 (not strings, not booleans).
+6) **Independence**: Judge accuracy/fluency/conciseness independently.
+
+## Special Token Handling: `[<unk>]`
+- `[<unk>]` is a literal marker meaning that the speech at that position could not be heard/transcribed.
+- `[<unk>]` is not lexical content itself and should not be treated as a translation error by itself.
+- For accuracy, do not require the `[<unk>]` portion itself to be translated; judge based on the known visible content before and after it.
+- Omissions or additions around `[<unk>]` should not be penalized if they are locally explainable by the unknown portion.
+- For fluency and conciseness, the mere presence of `[<unk>]` should not lower the score.
+- Penalize only clear errors, unnaturalness, or redundancy in the visible content outside `[<unk>]`.
+
+## Scoring Rubric (binary)
+- **Accuracy (0/1)** — semantic faithfulness from {source_lang} → {target_lang}.
+  - **1** if meaning is preserved with no critical errors. Minor wording shifts/omitted fillers ok.
+  - **0** if any of the following: wrong facts/numbers/dates/units; named entity or term mistranslated; negation/modality flipped; key information omitted or hallucinated; contradiction; translation contains substantial information that belongs to an adjacent segment rather than the current source segment.
+  - ASR artifacts in either side (e.g., missing Japanese punctuation, Korean spacing variation, stutters) should not lower accuracy if intended meaning remains clear.
+  - If `[<unk>]` appears, judge accuracy only on the visible content; do not penalize the unknown portion itself.
+
+- **Fluency (0/1)** — grammaticality and naturalness of the {target_lang} sentence as standalone Korean text.
+  - **1** if grammatically acceptable and coherent Korean (allow mild disfluencies common in SI: “음/어/그러니까”, repairs, fragments that still read naturally).
+  - **0** if ungrammatical to the point of obscuring meaning, broken Korean word order, garbled fragments, duplicated stray tokens, malformed endings/particles, or unfinished wording that reads unnaturally.
+  - Do not lower fluency solely because `[<unk>]` appears in the pair.
+
+- **Conciseness (0/1)** — absence of unnecessary verbosity/repetition in the {target_lang} sentence.
+  - **1** if the translation avoids redundant restatements, tautologies, or repeated sentences/phrases without losing essential content.
+  - **0** if it includes clearly avoidable repetition, verbose padding, or reiterates the same content without need.
+  - Note: conciseness is **not** a penalty for necessary explicitation typical in SI; slight expansions for clarity are acceptable.
+  - Do not lower conciseness solely because `[<unk>]` appears in the pair.
+
+## Leniency for Transcription
+Be generous with transcription quirks: missing Japanese punctuation, Korean spacing variation, fillers, and partial clause boundaries should not be penalized unless they cause the specific metric to fail (e.g., make it ungrammatical for fluency, or change meaning for accuracy). Apply the same leniency to `[<unk>]`: evaluate only the intelligible visible content.
+
+## Important Notes for Simultaneous Interpretation
+- In simultaneous interpretation, content may bleed across neighboring segments; if the target includes substantial content that belongs to an adjacent source segment, score accuracy as 0 for the current pair.
+- Natural Korean may omit pronouns or shift speech level; do not penalize those changes by themselves if the meaning remains faithful and the sentence stays natural.
+
+## Edge Cases
+- Empty or whitespace-only translation → accuracy=0, fluency=0, conciseness=0.
+- If {source_lang} is fragmentary, judge accuracy against the fragment only; still apply fluency/conciseness normally.
+- Code-switching/transliteration is fine if faithful and natural (e.g., proper nouns, loanwords).
+- Honorific or speech-level shifts in Korean are acceptable unless they distort meaning or make the sentence clearly unnatural.
+
+## Input Format
+{fewshot_input_str}
+
+## Output Format
+```json
+{fewshot_output_str}
+```
+
+## Input Data to Evaluate
+```json
+{input_str}
+```
+'''
+
+
+[[fewshot_examples]]
+ja = "恋愛に飛び込んできたもの、"
+ko = "사랑에 뛰어든 것,"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "アルバイトはあるけど職歴なしニート二七歳。"
+ko = "아르바이트는 하지만 직장 경력 없는 스물일곱 살 니트예요."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "班ってさ、修学旅行の班って、"
+ko = "조 있잖아, 수학여행 조 말이야,"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "そうすると人がどうなったかって話をするんですけど、医者の世界ではもう皆さん方を見ないで、検査の結果はみんな当たり前。"
+ko = "그러면 사람이 어떻게 됐는지 얘기하는데, 의사들의 세계에서는 이제 여러분을 보지 않고 검사 결과는 다 당연합니다."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "画面の停止ボタンを押してもろうて、"
+ko = "화면의 일시정지 버튼을 눌러 주시고,"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "いくつか質問と、それに対する答えを取り上げて、皆さんに紹介したいと思います。"
+ko = "몇 가지 질문과 그에 대한 답을 소개하고 싶습니다. 여러분께 드리고 싶습니다."
+accuracy = 1
+fluency = 0
+conciseness = 0
+
+[[fewshot_examples]]
+ja = "家賃もバカにならない。"
+ko = "월세도 무시 못 해요."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+
+[[fewshot_examples]]
+ja = "ダウは下落、"
+ko = "다우는 하락했고,"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "心を許したその数少ないんだけど"
+ko = "마음을 허락한 사람은 몇 안 되지만"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "生涯の始めにおいては、出立することはすなわち死ぬことである。"
+ko = "삶의 시작에서는 떠난다는 것은 곧 죽는 것이다."
+accuracy = 1
+fluency = 1
+conciseness = 1
+[[fewshot_examples]]
+ja = "どうもね、序盤の分かれがどうだったのかなと個人的には思ってしまいますね。"
+ko = "개인적으로는 초반의 갈림길이 어땠는지 궁금하다고 생각하게 되네요. 그렇게 생각합니다."
+accuracy = 1
+fluency = 1
+conciseness = 0
+
+[[fewshot_examples]]
+ja = "あのね、"
+ko = "그러니까,"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "はい。"
+ko = "네."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "だって温暖化はこれはどうにかしないといけないですし、若者もやっぱりすごく意識が高いんですよね。"
+ko = "왜냐하면 온난화는 이건 어떻게든 해야 하고, 젊은이들도 역시 의식이 매우 높거든요."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "いや持ってたんですよ、オーストラリアに1年行った間は。"
+ko = "아니, 있었어요. 호주에 1년 갔던 동안에는."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "私だって分かってるんだけど、いるのは本人確認書。"
+ko = "저도 알고는 있는데, 필요한 건 본인 확인 서류예요."
+accuracy = 1
+fluency = 1
+conciseness = 1
+[[fewshot_examples]]
+ja = "なので、ペット保険に入るっていうのをちょっと挑戦してみてください。"
+ko = "그래서 펫보험에 들어가는 것을 좀 도전해 보세요."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "これを達成すると何が起こるかというと"
+ko = "이걸 달성하면 무슨 일이 일어나냐 하면"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "成分の最後白血球に関してねちょっと見ていければなっていうふうに思っています"
+ko = "성분의 마지막인 백혈구에 대해서 조금 보려고 합니다."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "ここ1週間の値動きですが、"
+ko = "지난 1주일간의 가격 움직임인데요,"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "気持ち毛先のほうをはねさせたいので、少し毛先になってくると押さえてからこのようにしていきます。"
+ko = "끝부분을 살짝 바깥으로 뻗치게 하고 싶기 때문에, 끝쪽에 오면 눌러 준 다음 이렇게 해줍니다."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "うんすごくねなんかこの淡いなんかすごくひかれているけれどなんかどう直接的に関わっていいのか分かんないようなちょっとこの淡さのあるような2人っていうのはすごくいいなと思ってうん"
+ko = "음, 뭔가 이 은은함에 아주 끌리긴 하는데 어떻게 직접적으로 다가가야 할지 모르는 듯한, 그런 은은함이 있는 두 사람이라는 게 정말 좋다고 생각해."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "これは"
+ko = "이건"
+accuracy = 1
+fluency = 1
+conciseness = 1

@@ -1,0 +1,220 @@
+processor_version = "1"
+source_lang = "ja"
+target_lang = "en"
+
+[[messages]]
+role = "system"
+content = '''
+You are an expert evaluator for simultaneous interpretation quality. Your task is to evaluate translation pairs between {source_lang} and {target_lang}.
+'''
+
+[[messages]]
+role = "user"
+content = '''
+Please evaluate the quality of simultaneous-interpreting data. Please assess the quality thoroughly according to the instructions below.
+The input text is a transcription, so please be generous in your evaluation of it.
+
+## Instructions
+- The input consists of pairs of {source_lang} and {target_lang} sentences.
+- For each pair, evaluate fluency, accuracy, and conciseness.
+- Accuracy: how precisely the Japanese sentence has been translated into English.
+    - Output 1 if accurate, otherwise 0.
+- Fluency: how naturally the Japanese sentence has been translated into English.
+    - Output 1 if fluent, otherwise 0.
+- Conciseness: how concisely the Japanese sentence has been translated into English.
+    - Output 1 if concise, otherwise 0.
+- Use the input/output format shown below.
+
+## Input Format
+You will receive translation pairs in this format:
+```json
+{fewshot_input_str}
+```
+
+## Output Format
+Return ONLY a valid JSON object with your evaluations:
+```json
+{fewshot_output_str}
+```
+
+## Input Data to Evaluate
+```json
+{input_str}
+```
+
+## Response Requirements
+1. Return ONLY the JSON output object - no explanations or comments
+2. Include ALL input pairs in your output
+3. Each entry must have all five fields: {source_lang}, {target_lang}, fluency, accuracy, conciseness
+4. Scores must be either 0 or 1 (integers, not strings)
+5. Maintain the same order as the input
+'''
+
+[[fewshot_examples]]
+ja = "恋愛に飛び込んできたもの、"
+en = "Something jumped in"
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "アルバイトはあるけど職歴なしニート二七歳。"
+en = "I have part-time work, but I'm a 27-year-old NEET with no job history."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "班ってさ、修学旅行の班って、"
+en = "groups, you know, the groups for the school trip are"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "そうすると人がどうなったかって話をするんですけど、医者の世界ではもう皆さん方を見ないで、検査の結果はみんな当たり前。"
+en = "Then, what happened to people is the topic. In the medical world, doctors no longer see patients, test results are all taken for granted."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "画面の停止ボタンを押してもろうて、"
+en = "please feel free to press the pause button on your screen and"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "いくつか質問と、それに対する答えを取り上げて、皆さんに紹介したいと思います。"
+en = "I would like to present the answer to those questions. I would like to offer to everyone."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "家賃もバカにならない。"
+en = "rent is substantial."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "でも、あの万博会場に行くルート、2本しかないんですよ。"
+en = "But there are only two routes to the Expo venue. There are only two routes."
+accuracy = 1
+fluency = 0
+conciseness = 0
+
+[[fewshot_examples]]
+ja = "ダウは下落、"
+en = "while the Dow fell,"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "心を許したその数少ないんだけど"
+en = "Although few who trust your heart with someone they truly trust and believe in,"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "生涯の始めにおいては、出立することはすなわち死ぬことである。"
+en = "At the beginning of life, departure means dying."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "どうもね、序盤の分かれがどうだったのかなと個人的には思ってしまいますね。"
+en = "Personally, I'm curious how the opening unfolded. That's what I think."
+accuracy = 1
+fluency = 1
+conciseness = 0
+
+[[fewshot_examples]]
+ja = "あのね、"
+en = "So"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "はい。"
+en = "So,"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "だって温暖化はこれはどうにかしないといけないですし、若者もやっぱりすごく意識が高いんですよね。"
+en = "Because global warming must be addressed, and young people also have high awareness."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "いや持ってたんですよ、オーストラリアに1年行った間は。"
+en = "Actually, I had one, during the year I was in Australia."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "私だって分かってるんだけど、いるのは本人確認書。"
+en = "But I understood, they need identification."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "なので、ペット保険に入るっていうのをちょっと挑戦してみてください。"
+en = "So, getting pet insurance please give it a try."
+accuracy = 0
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "これを達成すると何が起こるかというと"
+en = "then what happens is"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "成分の最後白血球に関してねちょっと見ていければなっていうふうに思っています"
+en = "Today I want to look at the final blood cell component, the white blood cells."
+accuracy = 0
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "ここ1週間の値動きですが、"
+en = "is the price movement of the past week."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+
+[[fewshot_examples]]
+ja = "気持ち毛先のほうをはねさせたいので、少し毛先になってくると押さえてからこのようにしていきます。"
+en = "Since I want to slightly flip the hair tips, when it reaches the tips, I press down, and do it like this."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "うんすごくねなんかこの淡いなんかすごくひかれているけれどなんかどう直接的に関わっていいのか分かんないようなちょっとこの淡さのあるような2人っていうのはすごくいいなと思ってうん"
+en = "So somehow the sweet and very attractive. But I don't know how to relate to it directly. I think this 2's faintness is really nice."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "これは"
+en = "This"
+accuracy = 1
+fluency = 1
+conciseness = 1

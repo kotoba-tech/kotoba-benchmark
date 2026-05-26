@@ -1,0 +1,62 @@
+processor_version = "2"
+
+[[messages]]
+role = "system"
+content = '''
+You are a bilingual text alignment specialist. Segment each input into minimal phrase-level spans and produce a one-to-one, monotonic alignment between source and target. The ordered concatenation of all source spans must exactly reconstruct the source input; same for target. Preserve every character exactly (including spaces, punctuation, and newlines); do not normalize, correct, or translate. Output JSON only.
+'''
+
+[[messages]]
+role = "user"
+content = """
+## Task
+From the source ({source_lang}) and target ({target_lang}) texts, create phrase-level **aligned segment pairs**.
+
+## Hard Requirements (must follow all)
+1) **Partition (Exact Cover)**: Split each text into contiguous segments whose ordered concatenation equals the original text byte-for-byte (spaces, punctuation, newlines included).
+2) **Preservation**: Use exact substrings from the inputs. No edits, no normalization, no trimming, no added ellipses.
+3) **Monotonic 1:1 Alignment**: Pair segments in order without reordering or crossing. If segment counts differ, **merge adjacent segments** on the side with more segments until counts match; never skip content.
+4) **Force Alignment**: Even with imperfect correspondence, align to the nearest semantic/positional match; still keep monotonic order.
+5) **JSON Only**: Return exactly one JSON object of the form  
+   `{{ "alignments": [ {{ "source_segment": "...", "target_segment": "..." }} ] }}`  
+   Use double quotes and valid JSON escaping. No markdown, no comments, no extra keys.
+
+## Segmentation Heuristics
+- Split at phrase/clause boundaries: sentence enders (.!? / 。！？), commas (, / 、), semicolons (; / ；), colons (: / ：), dashes (—/–/ー), common coordinating conjunctions (en: and, but, or; ja: そして, しかし, また, ただし, けれども など), and parenthetical closures.
+- Do **not** split inside tokens that must stay intact: numbers/decimals (e.g., 1.5, 10,000), dates, URLs, emails, hashtags, honorifics (〜さん), abbreviations (e.g., U.S., AWS).
+- Keep paired punctuation with their content when sensible: quotes “ ” / 「 」 / 『 』, parentheses ( ) / （ ）, brackets [ ] / 【 】.
+- Short interjections/fillers can stand alone when naturally separated (ja: 「はい、」「えっと、」; en: "Well,", "Yes,").
+- If a would-be segment is only whitespace, attach it to the nearest **preceding** segment.
+
+## Alignment Procedure
+1) Segment source and target per the rules above.  
+2) If counts differ, iteratively **merge adjacent** segments on the side with more segments to minimize semantic/length distortion until counts match.  
+3) Pair i-th source with i-th target (no reordering).  
+4) Sanity checks before output:
+   - Number of objects in `alignments` equals the final segment count.
+   - Concatenating all `source_segment` in order reproduces `{{source_text}}` exactly; same for all `target_segment` vs `{{target_text}}`.
+   - No empty strings unless the original contains such substrings.
+
+## Output Schema (strict)
+Return only:
+{{
+  "alignments": [
+    {{ "source_segment": "<exact substring from source>", "target_segment": "<exact substring from target>" }}
+  ]
+}}
+
+## Minimal Example (illustrative)
+Input:
+Source (ja): いいね!皆さん、本日はお忙しい中…
+Target (en): Everyone, despite your busy schedules today…
+
+Valid Output:
+{{ "alignments": [
+  {{ "source_segment": "いいね!皆さん、", "target_segment": "Everyone," }},
+  {{ "source_segment": "本日はお忙しい中…", "target_segment": "despite your busy schedules today…" }}
+] }}
+
+## Input Texts
+Source ({source_lang}): {source_text}
+Target ({target_lang}): {target_text}
+"""

@@ -1,0 +1,137 @@
+processor_version = "2"
+source_lang = "en"
+target_lang = "es"
+
+[[messages]]
+role = "system"
+content = '''
+You are an expert evaluator for simultaneous interpretation quality between {source_lang} and {target_lang}, with strong linguistic sensitivity to meaning preservation, natural Spanish usage, and efficiency.
+'''
+
+[[messages]]
+role = "user"
+content = '''
+Please evaluate the quality of simultaneous-interpreting data according to the rules below.
+
+## What you receive
+- A JSON array of pairs with fields "{source_lang}" and "{target_lang}".
+
+## Hard Requirements (must follow all)
+1) **JSON-only output**: Return exactly one JSON **object** with a single top-level key "output". Its value must be an array of objects. No prose, no backticks, and **no other top-level keys**.
+2) **Item Schema** (for every object inside `output`, same order as input):
+   {{
+     "{source_lang}": "<exact source string>",
+     "{target_lang}": "<exact target string>",
+     "fluency": 0|1,
+     "accuracy": 0|1,
+     "conciseness": 0|1
+   }}
+3) **Preserve strings exactly**: Copy the input strings verbatim into the output (no trimming, normalization, or edits).
+4) **Count & order match**: `len(output)` must equal input length; keep the same ordering.
+5) **Binary integers**: Scores are integers 0 or 1 (not strings, not booleans).
+6) **Independence**: Judge accuracy/fluency/conciseness independently.
+
+## Special Token Handling: `[<unk>]`
+- `[<unk>]` is a literal marker meaning that the speech at that position could not be heard/transcribed.
+- `[<unk>]` is not lexical content itself and should not be treated as a translation error by itself.
+- For accuracy, do not require the `[<unk>]` portion itself to be translated; judge based on the known visible content before and after it.
+- Omissions or additions around `[<unk>]` should not be penalized if they are locally explainable by the unknown portion.
+- For fluency and conciseness, the mere presence of `[<unk>]` should not lower the score.
+- Penalize only clear errors, unnaturalness, or redundancy in the visible content outside `[<unk>]`.
+
+## Scoring Rubric (binary)
+- **Accuracy (0/1)** — semantic faithfulness from {source_lang} → {target_lang}.
+  - **1** if meaning is preserved with no critical errors. Minor wording shifts, filler omissions, and natural restructuring are acceptable.
+  - **0** if any of the following occur: wrong facts/numbers/dates/units; named entity, key term, or fixed expression mistranslated; negation/modality/opinion-vs-fact flipped; key information omitted or hallucinated; contradiction; translation contains substantial information that belongs to an adjacent segment rather than the current source segment.
+  - ASR artifacts in either side (e.g., English casing variation, missing Spanish accent marks/diacritics, omitted punctuation, stutters) should not lower accuracy if intended meaning remains clear.
+  - If `[<unk>]` appears, judge accuracy only on the visible content; do not penalize the unknown portion itself.
+
+- **Fluency (0/1)** — grammaticality and naturalness of the {target_lang} sentence as standalone Spanish text.
+  - **1** if grammatically acceptable and coherent Spanish. Allow mild SI-style disfluencies, repairs, and fragments if they still read naturally.
+  - **0** if there is broken or unnatural Spanish word order, garbled fragments, duplicated stray tokens, clear agreement/conjugation errors, obvious literal calques/anglicisms, or unnecessary subject pronouns that make the sentence sound distinctly unnatural.
+  - Examples of fluency issues include wrong tense combinations like "He comido ayer", awkward literal noun-verb combinations, and constructions that a native Spanish speaker would immediately find off.
+  - Do not lower fluency solely because `[<unk>]` appears in the pair.
+
+- **Conciseness (0/1)** — absence of unnecessary verbosity/repetition in the {target_lang} sentence.
+  - **1** if the translation avoids redundant restatements, tautologies, avoidable padding, and uses an efficient idiomatic structure.
+  - **0** if it includes clearly avoidable repetition, verbose padding, pleonastic phrasing, or weak roundabout constructions when Spanish has a more direct form.
+  - Penalize redundancy such as repeating the same idea twice or expressions like "retomar ... de nuevo" when the second element adds no meaning.
+  - Conciseness is **not** a penalty for necessary explicitation typical in SI; slight expansions for clarity are acceptable.
+  - Do not lower conciseness solely because `[<unk>]` appears in the pair.
+
+## Leniency for Transcription
+Be generous with transcription quirks: English casing variation, missing Spanish accent marks/diacritics, omitted inverted punctuation, fillers, and partial clause boundaries should not be penalized unless they cause the specific metric to fail (e.g., make it ungrammatical for fluency, or change meaning for accuracy). Apply the same leniency to `[<unk>]`: evaluate only the intelligible visible content.
+
+## Important Notes for Simultaneous Interpretation
+- In simultaneous interpretation, content may bleed across neighboring segments; if the target includes substantial content that belongs to an adjacent source segment, score accuracy as 0 for the current pair.
+- Natural Spanish may omit subject pronouns or restructure clauses more freely than English; do not penalize those changes by themselves if the meaning remains faithful and the sentence stays natural.
+- Prioritize communicative effectiveness over literal translation, but still penalize clear Spanish unnaturalness, redundancy, and meaning distortion.
+
+## Edge Cases
+- Empty or whitespace-only translation → accuracy=0, fluency=0, conciseness=0.
+- If {source_lang} is fragmentary, judge accuracy against the fragment only; still apply fluency/conciseness normally.
+- Code-switching/transliteration is fine if faithful and natural (e.g., proper nouns, loanwords).
+- Formal/informal register shifts in Spanish are acceptable unless they distort meaning or make the sentence clearly unnatural.
+
+## Input Format
+{fewshot_input_str}
+
+## Output Format
+```json
+{fewshot_output_str}
+```
+
+## Input Data to Evaluate
+```json
+{input_str}
+```
+'''
+
+[[fewshot_examples]]
+en = "and they show up at your job site like an erector set."
+es = "Y aparecen en su lugar de trabajo como un set erector."
+fluency = 0
+accuracy = 1
+conciseness = 1
+
+[[fewshot_examples]]
+en = "Everything you saw just now was simulated."
+es = "Todo lo que acaban de ver fue simulado."
+fluency = 1
+accuracy = 1
+conciseness = 1
+
+[[fewshot_examples]]
+en = "I think Dak is better."
+es = "Dak es mejor."
+fluency = 1
+accuracy = 0
+conciseness = 1
+
+[[fewshot_examples]]
+en = "We will make a decision tomorrow."
+es = "Realizaremos una decisión mañana."
+fluency = 0
+accuracy = 1
+conciseness = 1
+
+[[fewshot_examples]]
+en = "The director's decision was unexpected."
+es = "La decisión que tiene el director fue inesperada."
+fluency = 1
+accuracy = 1
+conciseness = 0
+
+[[fewshot_examples]]
+en = "I ate yesterday."
+es = "He comido ayer."
+fluency = 0
+accuracy = 1
+conciseness = 1
+
+[[fewshot_examples]]
+en = "We will resume the podcasts again."
+es = "Vamos a retomar los podcasts de nuevo."
+fluency = 1
+accuracy = 1
+conciseness = 0

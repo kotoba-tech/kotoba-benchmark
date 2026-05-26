@@ -1,0 +1,39 @@
+# Evaluate OpenAI's Realtime Translation API on en→ja, using Kotoba's
+# benchmark pipeline for scoring. Source language is auto-detected by OpenAI;
+# only the target language is specified.
+#
+# Required env vars:
+#   OPENAI_API_KEY    (OpenAI account with Realtime API access — separate from
+#                     regular chat-completions access; also covers default
+#                     align/evaluate when those use gpt-* models)
+#   GEMINI_API_KEY    (transcription + default LLM judge for align/score)
+
+wav_dir = "/path/to/your/wavs"
+source_lang = "en"
+target_lang = "ja"
+output_dir = "./out/openai_realtime_en2ja"
+
+[translate]
+backend = "openai-realtime"
+# Default URL is wss://api.openai.com/v1/realtime/translations?model=gpt-realtime-translate.
+# Override here if you want a different realtime model:
+# url = "wss://api.openai.com/v1/realtime/translations?model=<other-model>"
+max_concurrency = 4
+max_retries = 3
+label = "openai_realtime_en2ja"
+# Optional server-side extras — both default to off. Source ASR is done by
+# Gemini in the transcribe stage anyway, and noise_reduction is opinionated.
+# input_transcription_model = "gpt-realtime-whisper"
+# noise_reduction = "near_field"
+
+[transcribe]
+model = "gemini-2.5-flash"
+max_workers = 8
+
+[align]
+model = "gemini-2.5-flash"
+max_workers = 8
+
+[evaluate]
+model = "gemini-2.5-flash"
+max_workers = 8

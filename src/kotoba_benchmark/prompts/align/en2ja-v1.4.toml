@@ -1,0 +1,134 @@
+processor_version = "2"
+
+[[messages]]
+role = "system"
+content = '''
+You are a bilingual text alignment specialist.
+
+Your objective is **soft monotonic alignment**:
+- Produce a monotonic 1:1 sequence of aligned pairs that **exactly covers both inputs byte-for-byte**.
+- Prefer pairs where **both sides are non-empty**, but **allow empty-string (NULL) segments** when one side truly has no counterpart (omission/addition), including at the beginning, middle, or end.
+- Minimize NULL usage and keep it local; do not use NULL as a band-aid for earlier segmentation mistakes.
+
+Core invariants:
+- Exact cover: concatenating all source spans reconstructs the source input exactly; same for target.
+- Preserve every character exactly (spaces, punctuation, newlines). No normalization, no correction, no translation.
+- Monotonic 1:1 pairing in output order (no reordering, no crossing).
+- Output JSON only (exactly the schema requested by the user).
+'''
+ 
+[[messages]]
+role = "user"
+content = """
+## Task
+From the source ({source_lang}) and target ({target_lang}) texts, create phrase-level **aligned segment pairs** under a **soft alignment** goal.
+
+Soft alignment goal (important):
+- Aim for 1:1 alignment where each pair covers **the most plausible corresponding spans** (semantic when possible, otherwise structural/positional).
+- If a span on one side has **no reasonable counterpart** on the other side (due to omission/addition, mistranslation, formatting-only insertion, etc.), you MAY align it with an empty string "" on the other side.
+- This is allowed at the **beginning, middle, or end**, but must follow the NULL policy and must be used minimally.
+
+## Hard Requirements (must follow all)
+1) **Partition (Exact Cover)**:
+   - Split each text into contiguous segments whose ordered concatenation equals the original text byte-for-byte (spaces, punctuation, newlines included).
+   - Empty segment "" contributes nothing to concatenation; it is allowed only per NULL policy.
+2) **Preservation**:
+   - Use exact substrings from the inputs. No edits, no normalization, no trimming, no added ellipses.
+3) **Monotonic 1:1 Alignment**:
+   - Output a single list where i-th `source_segment` is paired with i-th `target_segment`.
+   - Either side may be "" ONLY under NULL policy; never output both sides "" in the same pair.
+4) **Synchronized Segmentation Preference**:
+   - Choose boundaries that are likely to exist on BOTH sides (sentence enders, commas, newlines, closing quotes/parentheses, list markers).
+   - Prefer fewer, stronger boundaries over many fine splits if fine splits increase drift or NULL usage.
+5) **Merge-First Rule (anti-drift)**:
+   - If alignment starts drifting, do NOT pad with "" to compensate for earlier mistakes.
+   - First try re-segmentation or **merge adjacent segments** (typically on the side with more/smaller segments) to restore correspondence.
+6) **Force Alignment (soft)**:
+   - When correspondence is imperfect (including mistranslations), align to the nearest plausible match using:
+     - strong anchors (newlines/paragraphs/list structure),
+     - punctuation patterns,
+     - numbers/dates/URLs/emails,
+     - local context,
+     - then semantics as a tie-breaker (do not reorder).
+7) **JSON Only**:
+   - Return exactly one JSON object of the form:
+     `{{ "alignments": [ {{ "source_segment": "...", "target_segment": "..." }} ] }}`
+   - Use double quotes and valid JSON escaping. No markdown, no comments, no extra keys.
+
+## NULL Segment Policy (empty string "")
+Empty segments are allowed to represent **true unmatched content**, not segmentation failure.
+
+Rules:
+- A NULL segment is represented by "" on the missing side, paired with a non-empty segment on the other side.
+- Use NULL segments **minimally** (fewest possible) and keep them **local** (do not let misalignment propagate).
+- Avoid consecutive NULL segments on the same side unless there are multiple clearly separate unmatched insertions.
+- Prefer merging/resegmentation before using NULL.
+
+NULL is allowed in these cases:
+A) **Head insertion/deletion**: One side has leading material with no counterpart (e.g., title, greeting, prefix note).
+B) **Tail insertion/deletion**: One side has remaining characters while the other side is fully consumed.
+C) **Standalone aside only on one side**: bracketed/parenthetical note, footnote marker, stage direction, editorial note, metadata line.
+D) **Local omission/addition**: a phrase/sentence clearly present only on one side (including where the other side is mistranslated or missing the idea entirely), and merging would misleadingly mix unrelated content.
+
+NULL is NOT allowed when:
+- The supposedly “missing” side still has nearby content that could be matched by merging/resegmentation without misrepresenting unmatchedness.
+- You're trying to fix drift caused by earlier over-splitting.
+
+## Segmentation Heuristics
+- Split at phrase/clause boundaries:
+  - sentence enders (.!? / 。！？)
+  - commas (, / 、), semicolons (; / ；), colons (: / ：)
+  - dashes (—/–/ー)
+  - coordinating conjunctions (en: and, but, or; ja: そして, しかし, また, ただし, けれども など)
+  - parenthetical/quote closures.
+- Strong anchors (prefer aligning around these first):
+  - newlines, paragraph breaks,
+  - list bullets/numbering,
+  - repeated punctuation patterns,
+  - numerals/dates,
+  - URLs/emails.
+- Do NOT split inside tokens that must stay intact:
+  - numbers/decimals (1.5, 10,000),
+  - dates,
+  - URLs, emails, hashtags,
+  - abbreviations (U.S., AWS),
+  - honorifics (〜さん).
+- Keep paired punctuation with content when sensible:
+  - quotes “ ” / 「 」 / 『 』,
+  - parentheses ( ) / （ ）,
+  - brackets [ ] / 【 】.
+- If a would-be segment is only whitespace, attach it to the nearest **preceding** segment.
+
+## Alignment Procedure (must follow)
+0) **Anchor pass (anti-drift)**:
+   - First align coarse structure using anchors: paragraph/newline boundaries and list structure.
+   - Do not let one side skip anchors while the other consumes multiple anchors unless using explicit NULL per policy.
+1) **Draft segmentation**:
+   - Segment source and target using heuristics, choosing boundaries likely shared by both sides.
+2) **Reconciliation (merge-first)**:
+   - If segment counts differ or pairs look off:
+     - merge adjacent segments on the side with more/smaller segments,
+     - or coarsen boundaries around anchors,
+     - repeat until correspondence stabilizes.
+   - Do not introduce NULL until you have attempted merge/resegmentation.
+3) **Soft pairing**:
+   - Pair i-th source with i-th target.
+   - If a local span truly has no counterpart, insert a NULL pair at that position ("" on the missing side), keeping it local.
+4) **Final sanity checks**:
+   - Concatenating all `source_segment` reproduces `{{source_text}}` exactly; same for target.
+   - Monotonic order holds; each side’s segments are contiguous and non-overlapping.
+   - No pair has both sides "".
+   - NULL usage is minimal and justified under policy.
+
+## Output Schema (strict)
+Return only:
+{{
+  "alignments": [
+    {{ "source_segment": "<exact substring from source>", "target_segment": "<exact substring from target>" }}
+  ]
+}}
+
+## Input Texts
+Source ({source_lang}): {source_text}
+Target ({target_lang}): {target_text}
+"""

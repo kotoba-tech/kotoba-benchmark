@@ -1,0 +1,338 @@
+processor_version = "1.1"
+source_lang = "ko"
+target_lang = "en"
+
+[[messages]]
+role = "system"
+content = '''
+You are an expert evaluator of simultaneous interpreting (SI) quality between {source_lang} and {target_lang}. Evaluate each translation pair on three independent binary metrics: accuracy, fluency, conciseness. Be tolerant of transcription artifacts (ASR noise, Korean spacing variation, English casing/punctuation variation, hesitations). Treat the literal token `[<unk>]` as a marker that the speech there could not be heard/transcribed, and evaluate only the visible content around it.
+Use the few-shot examples as scoring calibration. Return JSON only. Do not include markdown, code fences, comments, or extra keys.
+'''
+
+[[messages]]
+role = "user"
+content = '''
+Please evaluate the quality of simultaneous-interpreting data according to the rules below.
+
+## What you receive
+- A JSON array of pairs with fields "{source_lang}" and "{target_lang}".
+
+## Hard Requirements (must follow all)
+1) **JSON-only output**: Return exactly one JSON **object** with a single top-level key "output". Its value must be an array of objects. No prose, no backticks, and **no other top-level keys**.
+2) **Item Schema** (for every object inside `output`, same order as input):
+   {{
+     "{source_lang}": "<exact source string>",
+     "{target_lang}": "<exact target string>",
+     "fluency": 0|1,
+     "accuracy": 0|1,
+     "conciseness": 0|1
+   }}
+3) **Preserve strings exactly**: Copy the input strings verbatim into the output (no trimming, normalization, or edits).
+4) **Count & order match**: `len(output)` must equal input length; keep the same ordering.
+5) **Binary integers**: Scores are integers 0 or 1 (not strings, not booleans).
+6) **Independence**: Judge accuracy, fluency, and conciseness independently. A short but wrong translation can still have conciseness=1. A meaning-preserving but repetitive translation can have accuracy=1 and conciseness=0. A meaning-preserving but ungrammatical translation can have accuracy=1 and fluency=0.
+
+## Special Token Handling: `[<unk>]`
+- `[<unk>]` is a literal marker meaning that the speech at that position could not be heard/transcribed.
+- `[<unk>]` is not lexical content itself and should not be treated as a translation error by itself.
+- For accuracy, do not require the `[<unk>]` portion itself to be translated; judge based on the known visible content before and after it.
+- Omissions or additions around `[<unk>]` should not be penalized if they are locally explainable by the unknown portion.
+- For fluency and conciseness, the mere presence of `[<unk>]` should not lower the score.
+- Penalize only clear errors, unnaturalness, or redundancy in the visible content outside `[<unk>]`.
+
+## Scoring Rubric (binary)
+- **Accuracy (0/1)**: semantic faithfulness from {source_lang} to {target_lang}.
+  - **1** if all key meaning is preserved with no critical errors. Minor wording shifts, natural restructuring, and omitted fillers are acceptable.
+  - **0** if any of the following occur: wrong facts, numbers, dates, units, names, terms, negation, modality, speaker intent, discourse relation, or role assignment; key information is omitted; target text hallucinates substantial information; target text contradicts source; target text contains substantial information that belongs to an adjacent segment rather than the current source segment.
+  - Discourse markers such as "그래서", "하지만", "먼저", "다음으로", and "다시 말해" matter when they express cause, contrast, order, or reformulation. Do not ignore them unless the same relation is clearly preserved another way.
+  - ASR artifacts in either side (e.g., Korean spacing variation, English casing/punctuation loss, stutters) should not lower accuracy if intended meaning remains clear.
+  - If `[<unk>]` appears, judge accuracy only on the visible content; do not penalize the unknown portion itself.
+
+- **Fluency (0/1)**: grammaticality and naturalness of the {target_lang} sentence as standalone English text.
+  - **1** if grammatically acceptable and coherent English. Mild SI disfluencies such as "uh/um", repairs, or sentence fragments are acceptable when they still read naturally.
+  - **0** if the target has broken English word order, serious grammar errors, garbled fragments, duplicated stray tokens, unfinished wording that reads unnaturally, or mixed-in untranslated Korean tokens that disrupt English reading.
+  - Do not lower fluency solely because `[<unk>]` appears in the pair.
+
+- **Conciseness (0/1)**: absence of unnecessary verbosity or repetition in the {target_lang} sentence.
+  - **1** if the translation avoids redundant restatements, tautologies, repeated sentences/phrases, or avoidable padding.
+  - **0** if it repeats the same content without need, adds verbose padding, or includes substantial extra wording that is not needed to convey the source.
+  - Necessary explicitation typical in SI is acceptable. Slight expansions for clarity are not a conciseness error.
+  - Do not lower conciseness solely because `[<unk>]` appears in the pair.
+
+## Leniency for Transcription
+Be generous with transcription quirks: Korean spacing variation, English casing/punctuation loss, fillers, and partial clause boundaries should not be penalized unless they cause the specific metric to fail. Apply the same leniency to `[<unk>]`: evaluate only the intelligible visible content.
+
+## Important Notes for Korean-English Simultaneous Interpretation
+- Korean and English have very different sentence structures (SOV vs SVO); structural rearrangement is expected and should not be penalized.
+- Korean often omits subjects and objects when clear from context; their addition in English is natural.
+- Korean particles and case markers (이/가, 을/를, 은/는) have no direct English equivalents; their omission is natural.
+- Korean honorifics and politeness endings (-습니다/-요) usually flatten into English; do not penalize the loss of register markers if the meaning remains clear.
+- Proper nouns may be transliterated, romanized, or kept in Hangul; all are acceptable if clear.
+- Korean idioms may be translated by meaning rather than literally.
+- Filler words ("음", "어", "그", "뭐") can be omitted without penalty.
+- In SI, content from one segment may bleed into an adjacent segment; if the target contains substantial information not present in the current source segment, score accuracy=0 regardless of where that content may have originated.
+
+## Edge Cases
+- Empty or whitespace-only translation: accuracy=0, fluency=0, conciseness=0.
+- If {source_lang} is fragmentary, judge accuracy against the fragment only; still apply fluency and conciseness normally.
+- Code-switching/transliteration is fine if faithful and natural (e.g., proper nouns, loanwords).
+
+## Input Format
+{fewshot_input_str}
+
+## Output Format
+```json
+{fewshot_output_str}
+```
+
+## Input Data to Evaluate
+```json
+{input_str}
+```
+'''
+
+# Good translations (1, 1, 1)
+[[fewshot_examples]]
+ko = "어."
+en = "Uh."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "네?"
+en = "Pardon?"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "왜 왜?"
+en = "Why? What happened?"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "불법 파업으로 인해 학생들이 입는 피해가 너무 큽니다."
+en = "The damage students suffer because of the illegal strike is too great."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "6월 영업 목표와 진행 계획은 표를 참고 부탁드립니다."
+en = "Please refer to the table for the June sales targets and progress plan."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "서울에서 부산까지 KTX로 두 시간 반이 걸립니다."
+en = "It takes two and a half hours to get from Seoul to Busan by KTX."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "너도 졸업하고 나면 학생이 아니라 노동자야."
+en = "After you graduate, you will no longer be a student; you will be a worker."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "비가 많이 와서 경기가 취소되었고 관중들은 실망했지만 선수들은 안전했습니다."
+en = "The game was canceled because of heavy rain. The spectators were disappointed, but the players were safe."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "그래서 문제는 우리가 오늘 안에 결정을 내릴 수 있느냐입니다."
+en = "So the question is whether we can make a decision today."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+# Verbose translations (1, 1, 0)
+[[fewshot_examples]]
+ko = "6월 영업 목표와 어 진행 계획은 표를 참고 부탁드립니다."
+en = "Regarding the sales targets for June and the related future progress plan, I would kindly ask you to please take a detailed look at the specific information provided in the table."
+accuracy = 1
+fluency = 1
+conciseness = 0
+
+[[fewshot_examples]]
+ko = "오늘 날씨가 좋네요."
+en = "The weather conditions on this particular day today are really, really quite nice, I would say."
+accuracy = 1
+fluency = 1
+conciseness = 0
+
+# Fluency issues (1, 0, 1) or (1, 0, 0)
+[[fewshot_examples]]
+ko = "저는 책을 세 권 샀습니다."
+en = "I bought three book."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "네 발표 잘 들었습니다."
+en = "Yes, your presentation listened well."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "너도 졸업하고 나면 학생이 아니라 노동자야."
+en = "You too after graduation student not worker are."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "비가 많이 와서 경기가 취소되었고 관중들은 실망했지만 선수들은 안전했습니다."
+en = "Rain much came so game canceled and spectators disappointed but players safe were."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "그분께 자료를 보내드리겠습니다."
+en = "I will send the honored materials to that honorable person."
+accuracy = 1
+fluency = 0
+conciseness = 0
+
+# Accuracy errors (0, *, *)
+[[fewshot_examples]]
+ko = "맞아요?"
+en = "Right."
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "우리 안 가요."
+en = "Are we going?"
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "왜?"
+en = "Because."
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "파업을 중단해 주세요."
+en = "Please continue the strike."
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "서울에서 부산까지 KTX로 두 시간 반이 걸립니다."
+en = "It takes three hours to get from Seoul to Busan by KTX."
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "그는 제안을 거절했을 뿐만 아니라 그 결정을 공개적으로 비판했습니다."
+en = "He rejected the proposal."
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "그는 늦었습니다."
+en = "He was late because of traffic."
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "금요일까지 예산 보고서를 완성해서 이사회에 제출해야 합니다."
+en = "Okay,"
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "그래서 문제는 우리가 오늘 안에 결정을 내릴 수 있느냐입니다."
+en = "The question is whether we can make a decision today."
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+# Untranslated Korean leakage
+[[fewshot_examples]]
+ko = "파업을 중단해 주세요."
+en = "Please stop the 파업."
+accuracy = 0
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "자료를 오늘 안에 보내 주세요."
+en = "Please send the 자료 by today."
+accuracy = 0
+fluency = 0
+conciseness = 1
+
+# Register and tone issues
+[[fewshot_examples]]
+ko = "여러분, 안전에 유의해 주시기 바랍니다."
+en = "Yo everyone, watch out for safety, okay?"
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "야, 오늘 너 좀 괜찮아 보인다."
+en = "Sir or madam, your condition appears rather satisfactory today."
+accuracy = 1
+fluency = 0
+conciseness = 0
+
+# Korean idiom translations
+[[fewshot_examples]]
+ko = "그 사람은 눈치가 빨라요."
+en = "That person is quick to read the room."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "지금은 정말 발등에 불이 떨어진 상황입니다."
+en = "We are really under the gun right now."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "그 사람은 눈치가 빨라요."
+en = "That person has fast eyes."
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+# Unknown token handling
+[[fewshot_examples]]
+ko = "회의는 [<unk>] 이후에 다시 시작하고, 결과는 내일 공유하겠습니다."
+en = "The meeting will resume afterward, and we will share the results tomorrow."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ko = "회의는 [<unk>] 이후에 다시 시작하고, 결과는 내일 공유하겠습니다."
+en = "The meeting will be canceled afterward, and we will share the results tomorrow."
+accuracy = 0
+fluency = 1
+conciseness = 1

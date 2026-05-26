@@ -1,0 +1,204 @@
+processor_version = "1"
+source_lang = "en"
+target_lang = "ja"
+
+[[messages]]
+role = "system"
+content = '''
+You are an expert evaluator for simultaneous interpretation quality. Your task is to evaluate translation pairs between {source_lang} and {target_lang}.
+'''
+
+[[messages]]
+role = "user"
+content = '''
+Please evaluate the quality of simultaneous-interpreting data. Please assess the quality thoroughly according to the instructions below.
+
+## Instructions
+- The input consists of pairs of {source_lang} and {target_lang} sentences.
+- For each pair, evaluate fluency, accuracy, and conciseness.
+- Accuracy: how precisely the Japanese sentence has been translated into English.
+    - Output 1 if accurate, otherwise 0.
+- Fluency: how naturally the Japanese sentence has been translated into English.
+    - Output 1 if fluent, otherwise 0.
+- Conciseness: how concisely the Japanese sentence has been translated into English.
+    - Output 1 if concise, otherwise 0.
+- Use the input/output format shown below.
+
+## Input Format
+You will receive translation pairs in this format:
+```json
+{fewshot_input_str}
+```
+
+## Output Format
+Return ONLY a valid JSON object with your evaluations:
+```json
+{fewshot_output_str}
+```
+
+## Input Data to Evaluate
+```json
+{input_str}
+```
+
+## Response Requirements
+1. Return ONLY the JSON output object - no explanations or comments
+2. Include ALL input pairs in your output
+3. Each entry must have all five fields: {source_lang}, {target_lang}, fluency, accuracy, conciseness
+4. Scores must be either 0 or 1 (integers, not strings)
+5. Maintain the same order as the input
+'''
+
+[[fewshot_examples]]
+ja = "実際に子どものころからずっとタロットカードをさせていただいておりますので、安心してね、リーディング聴いてもらえればなと思います。"
+en = "but actually, since I was a child, I have been doing tarot card readings, so feel assured and listen to my readings."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "それからまあ、検察の、まあ、今後どうなるか、捜査が、僕はもうあの途中からかなり僕は検察の今回の捜査には批判的でして、やってること自体は別にいいんですけれども、この時期にやる意味が本当に全然分からないと。"
+en = "Also, regarding the prosecutors, about what will happen in the investigation, I, have been quite critical of the prosecutors' investigation from the middle on. What they are doing itself is fine, but I really don't understand the point of doing it at this time."
+accuracy = 0
+fluency = 0
+conciseness = 0
+
+[[fewshot_examples]]
+ja = "仲間やと思ってるし、私はこれからもそういう生き方を続けていきますし、デーチュウのハスっていいますけれど、世の中がどれだけこれからデジタル化でAI化で進んでいったとしても、人の心が進んでいったとしても、仲間と一緒に世界一宇宙一美しいハスとして咲いてやるって、咲き誇ってやるって思ってます。"
+en = "I consider you all my companions, and I will continue to live this way. they say it's about the lotus of the day, but no matter how much society advances with digitalization and AI, no matter how much the human heart evolves, I believe I will bloom together with my companions as the most beautiful lotus in the world and the universe."
+accuracy = 0
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "アルバイトはあるけど職歴なしニート二七歳。"
+en = "I have part-time work, but I'm a 27-year-old NEET with no job history."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "その日は大雨の中、最終列車の乗務をしていて、駅に停車中でした。"
+en = "On that day, during heavy rain, I was in charge of the last train, and I was stopped at a station."
+accuracy = 0
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "なぜか今日日ざしっていうか、日当たりがめっちゃいいせいか、私がめちゃくちゃ焼けて見えるっていう、髪色もそうなのか分かんない、めっちゃ焼けて見えるんですけど、焼けたのかな、焼けたかもしれないですけど、でも皆さんが思うよりもそんなに黒くないです。"
+en = "For some reason, maybe because the sunlight today is very strong, I look really tanned — I'm not sure if it's also the hair color, but I look very tanned. Maybe I got a tan, maybe I did, but I'm not as dark as you might think."
+accuracy = 1
+fluency = 0
+conciseness = 0
+
+[[fewshot_examples]]
+ja = "そうすると人がどうなったかって話をするんですけど、医者の世界ではもう皆さん方を見ないで、検査の結果はみんな当たり前。"
+en = "Then, what happened to people is the topic. In the medical world, doctors no longer see patients, test results are all taken for granted."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "でも、あの万博会場に行くルート、2本しかないんですよ。"
+en = "But there are only two routes to the Expo venue. There are only two routes."
+accuracy = 1
+fluency = 0
+conciseness = 0
+
+[[fewshot_examples]]
+ja = "生涯の始めにおいては、出立することはすなわち死ぬことである。"
+en = "At the beginning of life, departure means dying."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "どうもね、序盤の分かれがどうだったのかなと個人的には思ってしまいますね。"
+en = "Personally, I'm curious how the opening unfolded. That's what I think."
+accuracy = 1
+fluency = 1
+conciseness = 0
+
+[[fewshot_examples]]
+ja = "今回は藍井エイルさんとのアーティストコラボレーションモデル、先月発表になりましたので、ここで改めて細かくご説明できればなと思っております。"
+en = "This time, a collaboration with Eir Aoi, which was announced last month. We hope to explain this in detail here today."
+accuracy = 0
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "えとですね、もうジャストイヤーのアーティストコラボレーションモデルというと、もうそうですね、アーティストとしては5組目になりますかね。"
+en = "Well, Just Ear's artist collaboration models have had, if I count correctly, five artists so far."
+accuracy = 0
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "引き続きよろしくお願いします。"
+en = "Thank you for continuing with us."
+accuracy = 0
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "お、この人は、この人は、そうですね、お二人は、なんか、うん、気持ちの面とか、コミュニケーションとか、いろんなこととか、今までいろいろなことあったかもしれないけど、基本的に相性はよかったりとか、うん、なんかこう、ピタッて合う感じがしますようん、それはまあ、お互いに分かってるんじゃないかな。"
+en = "Oh, this person, this person, yes, the two of them, well, um, in terms of feelings, communication, and various things — there might have been many things before, but basically, they fit perfectly together. Yeah, they just seem to click perfectly. I think they both understand that."
+accuracy = 1
+fluency = 1
+conciseness = 0
+
+[[fewshot_examples]]
+ja = "担当も論文も、カリキュラムも全然追いついてなかったので、もう自宅受験をせざるをえなかったんですけど、まあ、一個だけ、5月担当の直前の模試だけ、1回会場受験をしたかなとは思いますね。"
+en = "Both the assigned work and the thesis, and the curriculum, I hadn't caught up at all, so I had no choice but to take the tests at home. However, just one time, only the mock test right before the May assignment, I think I did attend the venue once."
+accuracy = 0
+fluency = 0
+conciseness = 0
+
+[[fewshot_examples]]
+ja = "だって温暖化はこれはどうにかしないといけないですし、若者もやっぱりすごく意識が高いんですよね。"
+en = "Because global warming must be addressed, and young people also have high awareness."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "いや持ってたんですよ、オーストラリアに1年行った間は。"
+en = "Actually, I had one, during the year I was in Australia."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "だってあんたここ銀行だろ、保険証持ってこないよって言ったら、銀行員が、困りましたね、分かってんですけどねって言うんですよ。"
+en = "but I said, \"You're a bank! I won't come with an insurance card!\" Then the clerk said \"That's a problem, I know,\""
+accuracy = 0
+fluency = 0
+conciseness = 0
+
+[[fewshot_examples]]
+ja = "私だって分かってるんだけど、いるのは本人確認書。"
+en = "But I understood, they need identification."
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "なので、ペット保険に入るっていうのをちょっと挑戦してみてください。"
+en = "So, getting pet insurance please give it a try."
+accuracy = 0
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "気持ち毛先のほうをはねさせたいので、少し毛先になってくると押さえてからこのようにしていきます。"
+en = "Since I want to slightly flip the hair tips, when it reaches the tips, I press down, and do it like this."
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+ja = "で、つける位置としては、中間から毛先にこのように引っ張るようにつけていくと、しっかり紙が押さえられます。"
+en = "Regarding the application position, if you apply it pulling from the middle to the tips like this, it firmly suppresses frizz."
+accuracy = 0
+fluency = 0
+conciseness = 0

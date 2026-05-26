@@ -1,0 +1,167 @@
+processor_version = "2"
+
+[[messages]]
+role = "system"
+content = '''
+You are a bilingual text alignment specialist. Segment each input into minimal phrase-level spans and produce a one-to-one, monotonic alignment between source and target. The ordered concatenation of all source spans must exactly reconstruct the source input; same for target. Preserve every character exactly (including spaces, punctuation, and newlines); do not normalize, correct, or translate. Output JSON only.
+'''
+
+[[messages]]
+role = "user"
+content = """
+## Task
+From the source ({source_lang}) and target ({target_lang}) texts, create **phrase-level aligned segment pairs** with strict monotonic 1:1 pairing.
+
+Primary objective:
+- Avoid long chunks.
+- Force local alignment between pairs.
+- Keep each pair short and semantically focused.
+
+## Hard Requirements (must follow all)
+1) **Partition (Exact Cover)**:
+   - Split each text into contiguous segments whose ordered concatenation equals the original text byte-for-byte (spaces, punctuation, newlines included).
+2) **Preservation**:
+   - Use exact substrings from the inputs. No edits, no normalization, no trimming, no added ellipses.
+3) **Strict Monotonic 1:1 Pairing**:
+   - Pair segments in order without reordering or crossing.
+   - Never map current content to an already-consumed earlier segment.
+4) **Phrase-Level Granularity (critical)**:
+   - Each non-empty segment must be a short phrase/clause-level unit.
+   - Do not output paragraph-level or multi-sentence chunks in one pair.
+   - Prefer target lengths:
+     - English segment: usually 3-20 words, and usually <= 120 characters.
+     - Chinese segment: usually <= 45 characters.
+   - Hard cap: if a non-empty segment exceeds 180 English characters or 80 Chinese characters, split it further before pairing.
+5) **One Sentence-Level Unit Per Pair (critical)**:
+   - Each non-empty `source_segment` and `target_segment` should contain one sentence-level unit.
+   - If punctuation is missing, infer sentence-like boundaries from context and discourse flow.
+6) **Force Local Alignment Between Pairs (critical)**:
+   - Align each pair to the nearest local counterpart in the same progression.
+   - Do not "save" unmatched target text and attach it to a previous source pair.
+   - If one side has no local counterpart, use local NULL alignment with `""` on the missing side.
+   - If input/source chunks are skipped by the output/target, map each skipped source chunk to `target_segment: ""`.
+   - If output/target contains hallucinated content (not grounded in any source chunk), map that hallucinated target chunk as `{{"source_segment": "", "target_segment": "...hallucinated text..."}}`.
+   - Continue matching forward until you find the next valid pair.
+   - Do not wait by accumulating long chunks; prefer immediate local NULL and continue.
+7) **JSON Only**: Return exactly one JSON object of the form
+   `{{ "alignments": [ {{ "source_segment": "...", "target_segment": "..." }} ] }}`  
+   Use double quotes and valid JSON escaping. No markdown, no comments, no extra keys.
+
+## NULL Policy (empty string "")
+- A NULL segment is represented by `""` on the missing side, paired with a non-empty segment on the other side.
+- Use NULL minimally and locally.
+- Prefer local NULL over incorrect long merges.
+- Use `source_segment: ""` for hallucinated extra target text.
+- Never output a pair where both sides are `""`.
+
+## Segmentation Heuristics
+- Split at phrase/clause boundaries: sentence enders (.!? / 。！？), commas (, / ，、), semicolons (; / ；), colons (: / ：), dashes (—/–), common coordinating conjunctions (en: and, but, or; zh: 而且, 但是, 或者, 因此, 所以, 然后, 不过, 虽然 等), and parenthetical closures.
+- Do **not** split inside tokens that must stay intact: numbers/decimals (e.g., 1.5, 10,000), dates, URLs, emails, hashtags, Chinese four-character idioms (成语), abbreviations (e.g., U.S., AWS).
+- Keep paired punctuation with their content when sensible: quotes “ ” / 「 」 / 『 』, parentheses ( ) / （ ）, brackets [ ] / 【 】.
+- Short interjections/fillers can stand alone when naturally separated (zh: “嗯，”“那个，”; en: "Well,", "Yes,").
+- If a would-be segment is only whitespace, attach it to the nearest **preceding** segment.
+- If punctuation is weak or absent, split by context:
+  - action/order markers (first/then/finally; 首先/然后/最后),
+  - topic shift,
+  - causal turn (so/because; 所以/因为),
+  - contrast (but/however; 但是/不过).
+
+## Alignment Procedure
+1) Segment source and target into short phrase-level units first.
+2) Run left-to-right local pairing with strict monotonic pointers (`i` for source, `j` for target).
+3) At each step, compare current units (`source[i]`, `target[j]`):
+   - If they are a valid local match, pair them and advance both (`i += 1`, `j += 1`).
+   - If `source[i]` is skipped/no counterpart now, output `{{"source_segment": source[i], "target_segment": ""}}`, advance only source (`i += 1`), keep `j` unchanged.
+   - If `target[j]` is extra/no counterpart now, output `{{"source_segment": "", "target_segment": target[j]}}`, advance only target (`j += 1`), keep `i` unchanged.
+4) Repeat until both sides are fully consumed.
+5) Avoid oversized merges; if a pair becomes too long, split and realign locally.
+6) Sanity checks before output:
+   - Number of objects in `alignments` equals the final segment count.
+   - Concatenating all `source_segment` in order reproduces `{{source_text}}` exactly; same for all `target_segment` vs `{{target_text}}`.
+   - Every pair is local and monotonic.
+   - Every non-empty segment is phrase-level (not long paragraph chunks).
+   - No pair has both sides `""`.
+
+## Output Schema (strict)
+Return only:
+{{
+  "alignments": [
+    {{ "source_segment": "<exact substring from source>", "target_segment": "<exact substring from target>" }}
+  ]
+}}
+
+## Phrase-Level Examples (EN->ZH)
+Example 1
+Source: We launched yesterday. Users replied fast.
+Target: 我们昨天发布了。用户反馈很快。
+Valid Output:
+{{
+  "alignments": [
+    {{ "source_segment": "We launched yesterday.", "target_segment": "我们昨天发布了。" }},
+    {{ "source_segment": " Users replied fast.", "target_segment": "用户反馈很快。" }}
+  ]
+}}
+
+Example 2
+Source: Open the dashboard, then export the report.
+Target: 打开仪表板，然后导出报告。
+Valid Output:
+{{
+  "alignments": [
+    {{ "source_segment": "Open the dashboard, ", "target_segment": "打开仪表板，" }},
+    {{ "source_segment": "then export the report.", "target_segment": "然后导出报告。" }}
+  ]
+}}
+
+Example 3 (no punctuation, split by context)
+Source: first load data then train model finally run evaluation
+Target: 先加载数据然后训练模型最后进行评估
+Valid Output:
+{{
+  "alignments": [
+    {{ "source_segment": "first load data ", "target_segment": "先加载数据" }},
+    {{ "source_segment": "then train model ", "target_segment": "然后训练模型" }},
+    {{ "source_segment": "finally run evaluation", "target_segment": "最后进行评估" }}
+  ]
+}}
+
+Example 4 (forced local alignment with NULL)
+Source: First open settings. Then enable sync. Finally restart the app.
+Target: 先打开设置。最后重启应用。
+Valid Output:
+{{
+  "alignments": [
+    {{ "source_segment": "First open settings.", "target_segment": "先打开设置。" }},
+    {{ "source_segment": " Then enable sync.", "target_segment": "" }},
+    {{ "source_segment": " Finally restart the app.", "target_segment": "最后重启应用。" }}
+  ]
+}}
+
+Example 5 (extra target chunk, keep source pointer)
+Source: We start now. Please listen carefully.
+Target: 我们现在开始。请认真听。谢谢。
+Valid Output:
+{{
+  "alignments": [
+    {{ "source_segment": "We start now.", "target_segment": "我们现在开始。" }},
+    {{ "source_segment": " Please listen carefully.", "target_segment": "请认真听。" }},
+    {{ "source_segment": "", "target_segment": "谢谢。" }}
+  ]
+}}
+
+Example 6 (target hallucination -> map with empty source)
+Source: The update is complete. Reboot the system.
+Target: 更新已完成。请重启系统。我们保证明天股价上涨。
+Valid Output:
+{{
+  "alignments": [
+    {{ "source_segment": "The update is complete.", "target_segment": "更新已完成。" }},
+    {{ "source_segment": " Reboot the system.", "target_segment": "请重启系统。" }},
+    {{ "source_segment": "", "target_segment": "我们保证明天股价上涨。" }}
+  ]
+}}
+
+## Input Texts
+Source ({source_lang}): {source_text}
+Target ({target_lang}): {target_text}
+"""

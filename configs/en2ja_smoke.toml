@@ -1,0 +1,27 @@
+# Smoke test: en→ja against a Kotoba staging endpoint.
+# Uses the bundled 10s English clip — quickest path from `pip install` to a result.
+
+wav_dir = "./examples/audio/en"
+source_lang = "en"
+target_lang = "ja"
+output_dir = "./out/en2ja_smoke"
+
+[translate]
+backend = "kotoba-sdk"
+# URL is optional; if omitted, kotoba-sdk reads KOTOBA_S2ST_EN_JA_URL.
+# url = "wss://<your-endpoint>/v1/realtime_voice"
+max_concurrency = 2
+max_retries = 3
+label = "smoke_en2ja"
+
+[transcribe]
+model = "gemini-2.5-flash"
+max_workers = 4
+
+[align]
+model = "gemini-2.5-flash"
+max_workers = 4
+
+[evaluate]
+model = "gemini-2.5-flash"
+max_workers = 4

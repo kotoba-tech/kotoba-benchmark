@@ -1,0 +1,304 @@
+processor_version = "1"
+source_lang = "ko"
+target_lang = "zh"
+
+[[messages]]
+role = "system"
+content = '''
+You are an expert evaluator of simultaneous interpreting (SI) quality between {source_lang} and {target_lang}. Evaluate each translation pair on three independent binary metrics: accuracy, fluency, conciseness. Be tolerant of transcription artifacts (ASR noise, Korean spacing variation, Chinese punctuation variation, hesitations). Treat the literal token `[<unk>]` as a marker that the speech there could not be heard/transcribed, and evaluate only the visible content around it.
+Return JSON only. Do not include markdown, code fences, comments, or extra keys.
+'''
+
+[[messages]]
+role = "user"
+content = '''
+Please evaluate the quality of simultaneous-interpreting data according to the rules below.
+
+## What you receive
+- A JSON array of pairs with fields "{source_lang}" and "{target_lang}".
+
+## Hard Requirements (must follow all)
+1) **JSON-only output**: Return exactly one JSON **object** with a single top-level key "output". Its value must be an array of objects. No prose, no backticks, and **no other top-level keys**.
+2) **Item Schema** (for every object inside `output`, same order as input):
+   {{
+     "{source_lang}": "<exact source string>",
+     "{target_lang}": "<exact target string>",
+     "fluency": 0|1,
+     "accuracy": 0|1,
+     "conciseness": 0|1
+   }}
+3) **Preserve strings exactly**: Copy the input strings verbatim into the output (no trimming, normalization, or edits).
+4) **Count & order match**: `len(output)` must equal input length; keep the same ordering.
+5) **Binary integers**: Scores are integers 0 or 1 (not strings, not booleans).
+6) **Independence**: Judge accuracy/fluency/conciseness independently.
+
+## Special Token Handling: `[<unk>]`
+- `[<unk>]` is a literal marker meaning that the speech at that position could not be heard/transcribed.
+- `[<unk>]` is not lexical content itself and should not be treated as a translation error by itself.
+- For accuracy, do not require the `[<unk>]` portion itself to be translated; judge based on the known visible content before and after it.
+- Omissions or additions around `[<unk>]` should not be penalized if they are locally explainable by the unknown portion.
+- For fluency and conciseness, the mere presence of `[<unk>]` should not lower the score.
+- Penalize only clear errors, unnaturalness, or redundancy in the visible content outside `[<unk>]`.
+
+## Scoring Rubric (binary)
+- **Accuracy (0/1)** — semantic faithfulness from {source_lang} → {target_lang}.
+  - **1** if meaning is preserved with no critical errors. Minor wording shifts/omitted fillers ok.
+  - **0** if any of the following: wrong facts/numbers/dates/units; named entity or term mistranslated; negation/modality flipped; key information omitted or hallucinated; contradiction; translation contains substantial information that belongs to an adjacent segment rather than the current source segment.
+  - ASR artifacts in either side (e.g., Korean spacing variation, Chinese punctuation loss, stutters) should not lower accuracy if intended meaning remains clear.
+  - If `[<unk>]` appears, judge accuracy only on the visible content; do not penalize the unknown portion itself.
+
+- **Fluency (0/1)** — grammaticality and naturalness of the {target_lang} sentence as standalone Chinese text.
+  - **1** if grammatically acceptable and coherent Chinese (allow mild disfluencies common in SI: fillers like "那个/嗯", repairs, fragments that still read naturally).
+  - **0** if ungrammatical to the point of obscuring meaning, broken Chinese word order, garbled fragments, duplicated stray tokens, mixed-in untranslated Korean tokens that disrupt reading, or phrasing that would sound unnatural to a native Chinese speaker.
+  - Do not lower fluency solely because `[<unk>]` appears in the pair.
+
+- **Conciseness (0/1)** — absence of unnecessary verbosity/repetition in the {target_lang} sentence.
+  - **1** if the translation avoids redundant restatements, tautologies, or repeated sentences/phrases without losing essential content.
+  - **0** if it includes clearly avoidable repetition, verbose padding, or reiterates the same content without need.
+  - Note: conciseness is **not** a penalty for necessary explicitation typical in SI; slight expansions for clarity are acceptable.
+  - Do not lower conciseness solely because `[<unk>]` appears in the pair.
+
+## Leniency for Transcription
+Be generous with transcription quirks: Korean spacing variation, Chinese punctuation loss, fillers, and partial clause boundaries should not be penalized unless they cause the specific metric to fail (e.g., make it ungrammatical for fluency, or change meaning for accuracy). Apply the same leniency to `[<unk>]`: evaluate only the intelligible visible content.
+
+## Important Notes for Korean-Chinese Simultaneous Interpretation
+- Korean and Chinese have very different sentence structures (SOV vs SVO); structural rearrangement is expected and should not be penalized.
+- Korean particles and case markers (이/가, 을/를, 은/는) have no direct Chinese equivalents; their omission is natural.
+- Korean honorifics and politeness endings (-습니다/-요) flatten into Chinese; do not penalize the loss of register markers if the meaning remains clear.
+- Proper nouns should be translated/transliterated into Chinese characters or romanized when needed. Do not keep Hangul in the Chinese target text; Hangul leakage should be treated as untranslated source text because it can break downstream Chinese TTS.
+- Filler words ("음", "어", "그", "뭐") can be omitted without penalty.
+- In SI, content from one segment may bleed into an adjacent segment; if the target contains substantial information not present in the current source segment, score accuracy=0 regardless of where that content may have originated.
+
+## Edge Cases
+- Empty or whitespace-only translation → accuracy=0, fluency=0, conciseness=0.
+- If {source_lang} is fragmentary, judge accuracy against the fragment only; still apply fluency/conciseness normally.
+- Code-switching/transliteration is fine if faithful and natural (e.g., proper nouns, loanwords), but Hangul should not appear in the Chinese target text.
+
+## Input Format
+{fewshot_input_str}
+
+## Output Format
+```json
+{fewshot_output_str}
+```
+
+## Input Data to Evaluate
+```json
+{input_str}
+```
+'''
+# Good translations (1, 1, 1)
+[[fewshot_examples]]
+ko = "어."
+zh = "嗯。"
+"accuracy" = 1
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "네?"
+zh = "什么？"
+"accuracy" = 1
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "왜 왜?"
+zh = "怎么了？为什么？"
+"accuracy" = 1
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "불법 파업으로 인해 학생들이 입는 피해가 너무 큽니다."
+zh = "由于非法罢工，学生受到的损害太大了。"
+"accuracy" = 1
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "6월 영업 목표와 진행 계획은 표를 참고 부탁드립니다."
+zh = "6月的营业目标和推进计划，请参考表格。"
+"accuracy" = 1
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "서울에서 부산까지 KTX로 두 시간 반이 걸립니다."
+zh = "从首尔到釜山坐KTX需要两个半小时。"
+"accuracy" = 1
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "너도 졸업하고 나면 학생이 아니라 노동자야."
+zh = "你毕业之后也不是学生了，而是劳动者。"
+"accuracy" = 1
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "비가 많이 와서 경기가 취소되었고 관중들은 실망했지만 선수들은 안전했습니다."
+zh = "因为下了大雨，比赛取消了。观众们很失望，但选手们都很安全。"
+"accuracy" = 1
+"fluency" = 1
+"conciseness" = 1
+
+
+# Verbose translations (1, 1, 0)
+[[fewshot_examples]]
+ko = "6월 영업 목표와 어 진행 계획은 표를 참고 부탁드립니다."
+zh = "关于6月份的营业目标以及后续推进计划方面的相关内容，烦请您详细参考一下表格中的具体信息。"
+"accuracy" = 1
+"fluency" = 1
+"conciseness" = 0
+
+[[fewshot_examples]]
+ko = "오늘 날씨가 좋네요."
+zh = "今天这一天的天气状况看起来非常非常不错呢。"
+"accuracy" = 1
+"fluency" = 1
+"conciseness" = 0
+
+
+# Fluency issues (1, 0, 1) or (1, 0, 0)
+[[fewshot_examples]]
+ko = "저는 책을 세 권 샀습니다."
+zh = "我买了三书。"
+"accuracy" = 1
+"fluency" = 0
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "네 발표 잘 들었습니다."
+zh = "是，发表听得很好。"
+"accuracy" = 1
+"fluency" = 0
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "너도 졸업하고 나면 학생이 아니라 노동자야."
+zh = "你也毕业以后学生不是劳动者是。"
+"accuracy" = 1
+"fluency" = 0
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "비가 많이 와서 경기가 취소되었고 관중들은 실망했지만 선수들은 안전했습니다."
+zh = "雨很多来所以比赛取消了还有观众们失望但是选手们安全了。"
+"accuracy" = 1
+"fluency" = 0
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "그분께 자료를 보내드리겠습니다."
+zh = "我会向那位尊贵的人发送尊敬的资料。"
+"accuracy" = 1
+"fluency" = 0
+"conciseness" = 0
+
+
+# Accuracy errors (0, *, *)
+[[fewshot_examples]]
+ko = "맞아요?"
+zh = "对。"
+"accuracy" = 0
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "우리 안 가요."
+zh = "我们去吗？"
+"accuracy" = 0
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "왜?"
+zh = "因为。"
+"accuracy" = 0
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "파업을 중단해 주세요."
+zh = "请继续罢工。"
+"accuracy" = 0
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "서울에서 부산까지 KTX로 두 시간 반이 걸립니다."
+zh = "从首尔到釜山坐KTX需要三个小时。"
+"accuracy" = 0
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "그는 제안을 거절했을 뿐만 아니라 그 결정을 공개적으로 비판했습니다."
+zh = "他拒绝了提议。"
+"accuracy" = 0
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "그는 늦었습니다."
+zh = "他因为堵车迟到了。"
+"accuracy" = 0
+"fluency" = 1
+"conciseness" = 1
+
+
+# Untranslated Korean / Hangul leakage
+[[fewshot_examples]]
+ko = "서울에서 부산까지 KTX로 두 시간 반이 걸립니다."
+zh = "从서울到부산坐KTX需要两个半小时。"
+"accuracy" = 0
+"fluency" = 0
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "삼성은 새로운 제품을 발표했습니다."
+zh = "삼성发布了新产品。"
+"accuracy" = 0
+"fluency" = 0
+"conciseness" = 1
+
+
+# Register mismatch (1, 0, 1)
+[[fewshot_examples]]
+ko = "여러분, 안전에 유의해 주시기 바랍니다."
+zh = "大家注意安全哦。"
+"accuracy" = 1
+"fluency" = 0
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "야, 오늘 너 좀 괜찮아 보인다."
+zh = "今日您的状态看起来颇为良好。"
+"accuracy" = 1
+"fluency" = 0
+"conciseness" = 1
+
+
+# Korean idiom translations
+[[fewshot_examples]]
+ko = "그 사람은 눈치가 빨라요."
+zh = "那个人很会察言观色。"
+"accuracy" = 1
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "지금은 정말 발등에 불이 떨어진 상황입니다."
+zh = "现在真的是火烧眉毛的情况。"
+"accuracy" = 1
+"fluency" = 1
+"conciseness" = 1
+
+[[fewshot_examples]]
+ko = "그 사람은 눈치가 빨라요."
+zh = "那个人眼神很快。"
+"accuracy" = 0
+"fluency" = 0
+"conciseness" = 1

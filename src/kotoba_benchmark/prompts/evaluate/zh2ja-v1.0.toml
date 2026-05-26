@@ -1,0 +1,204 @@
+processor_version = "1.1"
+source_lang = "zh"
+target_lang = "ja"
+
+[[messages]]
+role = "system"
+content = '''
+You are an expert evaluator of simultaneous interpreting (SI) quality between {source_lang} and {target_lang}. Evaluate each translation pair on three independent binary metrics: accuracy, fluency, conciseness. Be tolerant of transcription artifacts (ASR noise, Chinese punctuation variation, Japanese punctuation loss, hesitations). Treat the literal token `[<unk>]` as a marker that the speech there could not be heard/transcribed, and evaluate only the visible content around it.
+Use the few-shot examples as scoring calibration. Return JSON only. Do not include markdown, code fences, comments, or extra keys.
+'''
+
+[[messages]]
+role = "user"
+content = '''
+Please evaluate the quality of simultaneous-interpreting data according to the rules below.
+
+## What you receive
+- A JSON array of pairs with fields "{source_lang}" and "{target_lang}".
+
+## Hard Requirements (must follow all)
+1) **JSON-only output**: Return exactly one JSON **object** with a single top-level key "output". Its value must be an array of objects. No prose, no backticks, and **no other top-level keys**.
+2) **Item Schema** (for every object inside `output`, same order as input):
+   {{
+     "{source_lang}": "<exact source string>",
+     "{target_lang}": "<exact target string>",
+     "fluency": 0|1,
+     "accuracy": 0|1,
+     "conciseness": 0|1
+   }}
+3) **Preserve strings exactly**: Copy the input strings verbatim into the output (no trimming, normalization, or edits).
+4) **Count & order match**: `len(output)` must equal input length; keep the same ordering.
+5) **Binary integers**: Scores are integers 0 or 1 (not strings, not booleans).
+6) **Independence**: Judge accuracy, fluency, and conciseness independently. A short but wrong translation can still have conciseness=1. A meaning-preserving but repetitive translation can have accuracy=1 and conciseness=0.
+
+## Special Token Handling: `[<unk>]`
+- `[<unk>]` is a literal marker meaning that the speech at that position could not be heard/transcribed.
+- `[<unk>]` is not lexical content itself and should not be treated as a translation error by itself.
+- For accuracy, do not require the `[<unk>]` portion itself to be translated; judge based on the known visible content before and after it.
+- Omissions or additions around `[<unk>]` should not be penalized if they are locally explainable by the unknown portion.
+- For fluency and conciseness, the mere presence of `[<unk>]` should not lower the score.
+- Penalize only clear errors, unnaturalness, or redundancy in the visible content outside `[<unk>]`.
+
+## Scoring Rubric (binary)
+- **Accuracy (0/1)**: semantic faithfulness from {source_lang} to {target_lang}.
+  - **1** if all key meaning is preserved with no critical errors. Minor wording shifts, natural restructuring, and omitted fillers are acceptable.
+  - **0** if any of the following occur: wrong facts, numbers, dates, units, names, terms, negation, modality, speaker intent, discourse relation, or role assignment; key information is omitted; target text hallucinates substantial information; target text contradicts source; target text contains substantial information that belongs to an adjacent segment rather than the current source segment.
+  - Discourse markers such as "所以", "但是", "首先", "接下来", and "换句话说" matter when they express cause, contrast, order, or reformulation. Do not ignore them unless the same relation is clearly preserved another way.
+  - ASR artifacts in either side (e.g., Chinese punctuation variation, Japanese punctuation loss, stutters) should not lower accuracy if intended meaning remains clear.
+  - If `[<unk>]` appears, judge accuracy only on the visible content; do not penalize the unknown portion itself.
+
+- **Fluency (0/1)**: grammaticality and naturalness of the {target_lang} sentence as standalone Japanese text.
+  - **1** if grammatically acceptable and coherent Japanese. Mild SI disfluencies such as "えっと/あの", repairs, or sentence fragments are acceptable when they still read naturally.
+  - **0** if the target has broken Japanese word order, malformed particles/endings, duplicated stray tokens, garbled fragments, unfinished wording that reads unnaturally, or mixed-in untranslated Chinese tokens that disrupt Japanese reading.
+  - Do not lower fluency solely because `[<unk>]` appears in the pair.
+
+- **Conciseness (0/1)**: absence of unnecessary verbosity or repetition in the {target_lang} sentence.
+  - **1** if the translation avoids redundant restatements, tautologies, repeated sentences/phrases, or avoidable padding.
+  - **0** if it repeats the same content without need, adds verbose padding, or includes substantial extra wording that is not needed to convey the source.
+  - Necessary explicitation typical in SI is acceptable. Slight expansions for clarity are not a conciseness error.
+  - Do not lower conciseness solely because `[<unk>]` appears in the pair.
+
+## Leniency for Transcription
+Be generous with transcription quirks: Chinese punctuation variation, Japanese punctuation loss, fillers, and partial clause boundaries should not be penalized unless they cause the specific metric to fail. Apply the same leniency to `[<unk>]`: evaluate only the intelligible visible content.
+
+## Important Notes for Chinese-Japanese Simultaneous Interpretation
+- Chinese and Japanese have very different sentence structures (SVO vs SOV); structural rearrangement is expected and should not be penalized.
+- Chinese has no overt subject/object marking; Japanese often adds particles (は/が/を) and may need to insert subjects. These are natural additions.
+- Chinese omits articles and verb tense markers that Japanese supplies via auxiliaries (た/ている). These additions are natural.
+- Natural Japanese may omit subjects or shift between polite/plain style; do not penalize those changes by themselves if the meaning remains faithful and the sentence stays natural.
+- Proper nouns and many shared kanji terms can be kept identical or read with Japanese pronunciation; either is acceptable if clear.
+- Filler words ("那个", "嗯", "就是") can be omitted without penalty.
+- In SI, content from one segment may bleed into an adjacent segment; if the target contains substantial information not present in the current source segment, score accuracy=0 regardless of where that content may have originated.
+
+## Edge Cases
+- Empty or whitespace-only translation: accuracy=0, fluency=0, conciseness=0.
+- If {source_lang} is fragmentary, judge accuracy against the fragment only; still apply fluency and conciseness normally.
+- Code-switching/transliteration is fine if faithful and natural (e.g., proper nouns, loanwords).
+- Polite/plain-style shifts in Japanese are acceptable unless they distort meaning or make the sentence clearly unnatural.
+
+## Input Format
+{fewshot_input_str}
+
+## Output Format
+```json
+{fewshot_output_str}
+```
+
+## Input Data to Evaluate
+```json
+{input_str}
+```
+'''
+
+[[fewshot_examples]]
+zh = "我们今天讨论的是新产品发布后的客户反馈。大多数用户认可界面设计，但也有人指出注册流程太长。"
+ja = "本日議論するのは、新製品のリリース後に寄せられた顧客からのフィードバックです。多くのユーザーは画面設計を評価していますが、登録手続きが長すぎるという指摘もあります。"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "董事会还没有批准这项预算，所以我们不能在下周开始采购。"
+ja = "取締役会はすでにこの予算を承認したため、来週から調達を始められます。"
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "请把三月十五日上午九点的会议改到三月十六日下午两点。"
+ja = "3月15日午前9時の会議を、3月17日午後2時に変更してください。"
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "所以问题是，我们是否有足够的时间在月底前完成测试。"
+ja = "したがって問題は、月末までにテストを完了する十分な時間があるかどうかです。"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "所以问题是，我们是否有足够的时间在月底前完成测试。"
+ja = "問題は、月末までにテストを完了する十分な時間があるかどうかです。"
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "气候变化是当今人类面临的最大挑战之一。"
+ja = "気候変動は今日、人類が直面している最大の課題の一つであり、私たち全員が今すぐ行動を起こさなければなりません。"
+accuracy = 0
+fluency = 1
+conciseness = 0
+
+[[fewshot_examples]]
+zh = "请在今天之内提交报告，方便我们明天上午汇总。"
+ja = "報告書を本日中に提出してください。明日の午前中に集計するため、本日中に報告書を提出してください。"
+accuracy = 1
+fluency = 1
+conciseness = 0
+
+[[fewshot_examples]]
+zh = "我们年初启动了这个项目，因为客户明确要求缩短交付时间。"
+ja = "私たちは年初にこのプロジェクトを開始しました、なぜなら"
+accuracy = 0
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "我们必须在星期五之前完成预算报告并提交给董事会。"
+ja = "はい、"
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "如果服务器在晚上十点后仍然不稳定，请切换到备用环境。"
+ja = "サーバーが夜10時以降も不安定な場合は、备用环境に切り替えてください。"
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "我们将在[<unk>]之后重新评估这个计划，并把结果报告给管理层。"
+ja = "その後、この計画を再評価し、結果を経営陣に報告します。"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "这个系统不是为个人用户设计的，而是面向企业客户。"
+ja = "このシステムは個人ユーザー向けに設計されています。"
+accuracy = 0
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "接下来，我们先看成本结构。"
+ja = "次に、まずコスト構造を見ます。"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "深圳团队负责硬件验证，东京团队负责客户支持。"
+ja = "深圳チームはハードウェア検証を担当し、東京チームは顧客サポートを担当します。"
+accuracy = 1
+fluency = 1
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "这个决定会影响明年的招聘计划，也会影响培训预算。"
+ja = "この決定は来年の採用計画に影響しますし、研修予算にも影響するです。"
+accuracy = 1
+fluency = 0
+conciseness = 1
+
+[[fewshot_examples]]
+zh = "今天的会议到这里结束。"
+ja = "本日の会議はここで終了します。来週の監査資料も必ず提出してください。"
+accuracy = 0
+fluency = 1
+conciseness = 0

@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+.python-version
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Benchmark outputs
+out/
+results/
+results-*/
+*.log
+
+# Local secrets / scratch
+.env
+.env.*
+scratch/
+
+# Internal-only docs kept locally but never committed
+docs/DISTRIBUTION.md
+docs/SDK_GAP_CHECK.md
+src/kotoba_benchmark/prompts/PROMPTS_SOURCE.md
+CLAUDE.md
+
+# Large audio fixtures regenerated from HF datasets (see tests/fixtures/README)
+tests/fixtures/appen_en_5/
+
+.claude/
+uv.lock

@@ -1,0 +1,38 @@
+processor_version = "1"
+
+[[messages]]
+role = "system"
+content = '''
+You are a bilingual text alignment specialist. Your task is to segment and align source and target texts that are translations of each other.
+'''
+
+[[messages]]
+role = "user"
+content = """
+## Task
+Create aligned phrase-level segment pairs from source ({source_lang}) and target ({target_lang}) texts.
+
+## Rules
+1. **Segmentation**: Split at phrase boundaries (noun/verb/prepositional phrases, commas, conjunctions)
+2. **Alignment**: Each source segment pairs with exactly one target segment by meaning
+3. **Preservation**: Use exact original text - no editing or corrections
+4. **Force Alignment**: Always create alignments even if meaning correspondence is imperfect - align to nearest semantic or positional match
+
+## Output
+Return only valid JSON: `{{"alignments": [{{"source_segment": "text", "target_segment": "text"}}]}}`
+
+**Requirements**: JSON only, double quotes, preserve exact input text
+
+## Example
+
+### Example Input
+Source (ja): いいね!皆さん、本日はお忙しい中、AWサミット東京2017にお越しいただきまして、誠にありがとうございます今年のAWサミットは去年と比較しまして一日会期を延長して4日間にわたって。開催しております皆様の業務改革あるいは組織改革デジタライゼーションイノベーションあるいはクラウド移行に関してですね一つでも多くの学びを得られるサミットであればというふうに願っております
+Target (en): Everyone, despite your busy schedules today. Thank you very much for coming to AWS Summit Tokyo 2017. This year, AWS Summit compared to last year was extended by one day and held over four days. We are holding... your business reforms or organizational reforms, digitalization, innovation, or cloud migration. And we hope this summit will provide as many learning opportunities as possible.
+
+### Example Output
+{{"alignments":[{{"source_segment":"いいね!皆さん、","target_segment":"Everyone,"}},{{"source_segment":"本日はお忙しい中、","target_segment":"despite your busy schedules today."}},{{"source_segment":"AWサミット東京2017にお越しいただきまして、誠にありがとうございます","target_segment":"Thank you very much for coming to AWS Summit Tokyo 2017."}},{{"source_segment":"今年のAWサミットは去年と比較しまして","target_segment":"This year, AWS Summit compared to last year"}},{{"source_segment":"一日会期を延長して","target_segment":"was extended by one day"}},{{"source_segment":"4日間にわたって。","target_segment":"and held over four days."}},{{"source_segment":"開催しております","target_segment":"We are holding..."}},{{"source_segment":"皆様の業務改革あるいは組織改革","target_segment":"your business reforms or organizational reforms,"}},{{"source_segment":"デジタライゼーションイノベーションあるいはクラウド移行に関してですね","target_segment":"digitalization, innovation, or cloud migration."}},{{"source_segment":"一つでも多くの学びを得られるサミットであればというふうに願っております","target_segment":"And we hope this summit will provide as many learning opportunities as possible."}}]}}
+
+## Input Texts
+Source ({source_lang}): {source_text}
+Target ({target_lang}): {target_text}
+"""

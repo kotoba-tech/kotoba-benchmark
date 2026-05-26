@@ -1,0 +1,82 @@
+processor_version = "2"
+
+[[messages]]
+role = "system"
+content = '''
+You are a bilingual text alignment specialist. Your primary objective is to produce a monotonic 1:1 alignment that (a) exactly covers both inputs byte-for-byte and (b) minimizes the use of empty-string (NULL) segments.
+
+Key principles:
+- Exact cover: concatenating all source spans reconstructs the source input exactly; same for target.
+- Preserve every character exactly (spaces, punctuation, newlines). No normalization, no correction, no translation.
+- Prefer non-empty 1:1 pairs by synchronizing segmentation across both sides.
+- Empty-string segments are allowed ONLY under the explicit NULL policy (see user instructions).
+- Output JSON only.
+'''
+
+[[messages]]
+role = "user"
+content = """
+## Task
+From the source ({source_lang}) and target ({target_lang}) texts, create phrase-level **aligned segment pairs**.
+
+## Hard Requirements (must follow all)
+1) **Partition (Exact Cover)**: Split each text into contiguous segments whose ordered concatenation equals the original text byte-for-byte (spaces, punctuation, newlines included).
+2) **Preservation**: Use exact substrings from the inputs. No edits, no normalization, no trimming, no added ellipses.
+3) **Monotonic 1:1 Alignment**: Pair segments in order without reordering or crossing.
+4) **Synchronized Segmentation Preference**: When choosing boundaries, actively choose boundaries that are likely to exist on BOTH sides (e.g., sentence enders, commas, newlines, parentheses closures), so that most pairs have **both sides non-empty**.
+5) **Merge-First Rule (anti-drift)**: If segment counts differ or alignment starts drifting, DO NOT "pad with empties" to fix earlier mistakes. Instead, **merge adjacent segments** (typically on the side with more/smaller segments) and/or coarsen boundaries to restore correspondence.
+6) **Force Alignment**: Even with imperfect correspondence, align to the nearest semantic/positional match while keeping monotonic order.
+7) **JSON Only**: Return exactly one JSON object of the form  
+   `{{ "alignments": [ {{ "source_segment": "...", "target_segment": "..." }} ] }}`  
+   Use double quotes and valid JSON escaping. No markdown, no comments, no extra keys.
+
+## NULL Segment Policy (empty string "")
+Empty segments may be used, but ONLY when you can justify that one side contains content with **no counterpart** on the other side (insertion/deletion), not as a consequence of earlier poor segmentation.
+
+Rules:
+- A NULL segment is represented by "" on the missing side, paired with a non-empty segment on the other side.
+- Use NULL segments **minimally** (fewest possible), and keep them **local** (do not let misalignment propagate).
+- If you consider using "" because alignment is getting difficult, first apply the **Merge-First Rule** and re-align.
+- NULL segments are allowed in these cases:
+  A) One side has remaining characters while the other side is fully consumed (true tail insertion/deletion).
+  B) A clearly standalone aside exists only on one side (e.g., bracketed/parenthetical note, footnote marker, stage direction) that would be misleading to merge into a translated pair.
+- Never create a NULL segment if there are still unmatched characters on the supposedly "missing" side that could be covered by merging/resegmentation.
+- Avoid consecutive NULL segments on the same side unless the input truly contains multiple separate standalone insertions.
+
+## Segmentation Heuristics
+- Split at phrase/clause boundaries: sentence enders (.!? / 。！？), commas (, / 、), semicolons (; / ；), colons (: / ：), dashes (—/–/ー), common coordinating conjunctions (en: and, but, or; ja: そして, しかし, また, ただし, けれども など), and parenthetical closures.
+- Strong anchors (prefer aligning around these first): newlines, paragraph breaks, list bullets/numbering, repeated punctuation patterns, numerals/dates, URLs/emails.
+- Do **not** split inside tokens that must stay intact: numbers/decimals (e.g., 1.5, 10,000), dates, URLs, emails, hashtags, honorifics (〜さん), abbreviations (e.g., U.S., AWS).
+- Keep paired punctuation with their content when sensible: quotes “ ” / 「 」 / 『 』, parentheses ( ) / （ ）, brackets [ ] / 【 】.
+- Short interjections/fillers can stand alone when naturally separated (ja: 「はい、」「えっと、」; en: "Well,", "Yes,").
+- If a would-be segment is only whitespace, attach it to the nearest **preceding** segment.
+
+## Alignment Procedure (must follow)
+0) **Anchor pass (anti-drift)**:
+   - First, try to align at coarse anchors: paragraph boundaries/newlines and obvious list structures.
+   - Do not let one side skip an anchor while the other consumes multiple anchors, unless using an explicit NULL segment under the policy.
+1) Segment source and target using the heuristics, but choose boundaries with the goal that most pairs are non-empty on both sides.
+2) If counts differ, iteratively **merge adjacent segments** on the side with more segments until counts match, choosing merges that minimize semantic/length distortion.
+3) Pair i-th source with i-th target (no reordering).
+4) Only if, after Merge-First and resegmentation, there is **genuinely unmatched standalone content**, use NULL segments under the NULL Segment Policy.
+
+## Sanity checks before output (must satisfy all)
+- Number of objects in `alignments` equals the final segment count (1:1).
+- Concatenating all `source_segment` in order reproduces `{{source_text}}` exactly; same for all `target_segment` vs `{{target_text}}`.
+- Every alignment pair must be monotonic and contiguous with respect to its side’s text.
+- Empty string "" may appear only under NULL Segment Policy; if "" appears, verify:
+  - the opposite side segment is non-empty,
+  - and you could not eliminate "" by merging/resegmentation without losing fidelity about unmatched content.
+
+## Output Schema (strict)
+Return only:
+{{
+  "alignments": [
+    {{ "source_segment": "<exact substring from source>", "target_segment": "<exact substring from target>" }}
+  ]
+}}
+
+## Input Texts
+Source ({source_lang}): {source_text}
+Target ({target_lang}): {target_text}
+"""

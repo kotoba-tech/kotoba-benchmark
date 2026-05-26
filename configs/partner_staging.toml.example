@@ -1,0 +1,34 @@
+# Partner template: copy to `partner_staging.toml`, edit wav_dir + url, then:
+#   kotoba-benchmark run configs/partner_staging.toml
+#
+# Required env vars:
+#   KOTOBA_API_KEY    (bearer token for the Kotoba endpoint)
+#   GEMINI_API_KEY    (source/target transcription + default LLM judge for align/score)
+# Only required if you override align/evaluate to a gpt-* model:
+#   OPENAI_API_KEY
+
+wav_dir = "/path/to/your/wavs"   # ← edit me
+source_lang = "en"               # ← edit me
+target_lang = "ja"               # ← edit me
+output_dir = "./out/partner"
+
+[translate]
+backend = "kotoba-sdk"
+# Required either here OR via KOTOBA_S2ST_<SRC>_<TGT>_URL env var. The URL is
+# provided to you by Kotoba; it ends in `/v1/realtime_voice`.
+# url = "wss://<your-endpoint>/v1/realtime_voice"
+max_concurrency = 4
+max_retries = 3
+label = "partner_en2ja_staging"
+
+[transcribe]
+model = "gemini-2.5-flash"
+max_workers = 8
+
+[align]
+model = "gemini-2.5-flash"
+max_workers = 8
+
+[evaluate]
+model = "gemini-2.5-flash"
+max_workers = 8

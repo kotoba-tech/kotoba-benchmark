@@ -1,0 +1,212 @@
+processor_version = "1"
+source_lang = "en"
+target_lang = "ja"
+
+[[messages]]
+role = "system"
+content = '''
+You are an expert evaluator for simultaneous interpretation quality. Your task is to evaluate translation pairs between {source_lang} and {target_lang}. Treat the literal token `[<unk>]` as a marker that the speech there could not be heard/transcribed, and evaluate only the visible content around it.
+'''
+
+[[messages]]
+role = "user"
+content = '''
+## Task Definition
+Evaluate each translation pair on three dimensions: accuracy, fluency, and conciseness. Each dimension is scored as either 1 (meets criteria) or 0 (does not meet criteria).
+
+## Special Token Handling: `[<unk>]`
+- `[<unk>]` is a literal marker meaning that the speech at that position could not be heard/transcribed.
+- `[<unk>]` is not lexical content itself and should not be treated as a translation error by itself.
+- For accuracy, do not require the `[<unk>]` portion itself to be translated; judge based on the known visible content before and after it.
+- Omissions or additions around `[<unk>]` should not be penalized if they are locally explainable by the unknown portion.
+- For fluency and conciseness, the mere presence of `[<unk>]` should not lower the score.
+- Penalize only clear errors, unnaturalness, or redundancy in the visible content outside `[<unk>]`.
+
+## Evaluation Criteria
+
+### 1. Accuracy (正確さ)
+Score 1 if the translation preserves the core meaning:
+- All key information from the source is present in the target
+- No significant meaning is lost or distorted
+- Minor omissions acceptable if they don't change the main message
+- Cultural adaptations are fine if they preserve intent
+
+Score 0 if there are accuracy issues:
+- Important information is missing or incorrect
+- The meaning is significantly changed or misrepresented
+- Key facts, numbers, or concepts are wrong
+- The translation contradicts the source message
+- The translation contains substantial information that belongs to an adjacent segment rather than the current source segment
+
+Examples:
+- "I think Dak is better" → "プレスコットは優れています" (Accuracy: 0 - missing "I think", changes opinion to fact)
+- "they need identification" → "本人確認書" (Accuracy: 1 - core meaning preserved despite structural difference)
+
+### 2. Fluency (流暢さ)
+Score 1 if the translation sounds natural:
+- Grammatically correct in the target language
+- Natural word order and expression
+- Appropriate register and style
+- Minor disfluencies acceptable in simultaneous interpretation
+
+Score 0 if there are fluency issues:
+- Unnatural word order or phrasing
+- Grammatical errors that impede understanding
+- Awkward literal translations
+- Unidiomatic expressions
+
+Examples:
+- "そして現れます現場に組み立てキットのように。" (Fluency: 0 - unnatural word order)
+- "今見ていただいたものはすべてシミュレーションです。" (Fluency: 1 - natural Japanese)
+
+### 3. Conciseness (簡潔さ)
+Score 1 if the translation is appropriately concise:
+- Similar length to source or shorter
+- No unnecessary repetition or filler
+- Efficient use of target language
+- Preserves all essential information
+
+Score 0 if the translation is verbose:
+- Significantly longer than necessary
+- Contains redundant information
+- Uses unnecessarily complex expressions
+- Adds explanatory content not in source
+
+## Important Notes for Simultaneous Interpretation
+- Accept natural speech patterns and minor disfluencies
+- Focus on effective communication over perfect translation
+- Consider differences in language structure (e.g., Japanese often requires different word order)
+- Filler words and hesitations (like "uh", "まあ") can be omitted without penalty
+- Cultural context matters - some expressions need adaptation rather than literal translation
+- If `[<unk>]` appears in either side, judge only the intelligible visible content and do not penalize the unknown portion itself
+- In simultaneous interpretation, content may bleed across neighboring segments; if the target includes substantial content that belongs to an adjacent source segment, score accuracy as 0 for the current pair
+
+## Input Format
+You will receive translation pairs in this format:
+```json
+{fewshot_input_str}
+```
+
+## Output Format
+Return ONLY a valid JSON object with your evaluations:
+```json
+{fewshot_output_str}
+```
+
+## Input Data to Evaluate
+```json
+{input_str}
+```
+
+## Response Requirements
+1. Return ONLY the JSON output object - no explanations or comments
+2. Include ALL input pairs in your output
+3. Each entry must have all five fields: {source_lang}, {target_lang}, fluency, accuracy, conciseness
+4. Scores must be either 0 or 1 (integers, not strings)
+5. Maintain the same order as the input
+'''
+
+[[fewshot_examples]]
+en = "and they show up at your job site like an erector set."
+ja = "そして現れます現場に組み立てキットのように。"
+fluency = 0
+accuracy = 1
+conciseness = 1
+
+[[fewshot_examples]]
+en = "Everything you saw just now was simulated. "
+ja = "今見ていただいたものはすべてシミュレーションです。"
+fluency = 1
+accuracy = 1
+conciseness = 1
+
+[[fewshot_examples]]
+en = "Again, it gives this illusion of a three-dimensional object stored on a two-dimensional piece of film."
+ja = "ここでも、それは錯覚をもたらします。三次元の物体が二次元のフィルムに記録されているような錯覚です。"
+fluency = 1
+accuracy = 1
+conciseness = 1
+
+[[fewshot_examples]]
+en = "I know that maybe sounds crazy, but if you put Dak Prescott on the Eagles, I think the Eagles are better, and I think Dak is better."
+ja = "おかしく聞こえるかもしれませんが、もしダック・プレスコットをイーグルスに置けば、イーグルスは良くなると思います、そしてプレスコットは優れています。"
+fluency = 1
+accuracy = 0
+conciseness = 1
+
+[[fewshot_examples]]
+en = "We capture their competency and proficiencies within the system so that they can actually build a roadmap of learning across the data science, across the AI, across software engineering, bringing all three aspects together, and then be able to deliver AI in an efficient and effective and with the focus of user experience and customer experience"
+ja = "彼らの能力と熟達度をシステム内で把握し、データサイエンス、AI、ソフトウェアエンジニアリングの3つの側面を統合して学習のロードマップを構築し、ユーザー体験と顧客体験に焦点を当てて効率的かつ効果的にAIを提供できるようにします。"
+fluency = 1
+accuracy = 1
+conciseness = 1
+
+[[fewshot_examples]]
+en = "After the 1960s peace sign revolution failed to change anything and President Sweats-a-Lot bamboozled everybody, Metacinema reacted by delving headfirst into Parity City, which is a lot like Party City except with cheaper laughs."
+ja = "1960年代の平和の象徴革命が何も変えられず、汗をかきまくる大統領が皆を騙した後、メタシネマはパリティシティに真っ向から飛び込みました。これはパーティーシティに似ていますが、笑いが安価です。"
+fluency = 0
+accuracy = 0
+conciseness = 1
+
+[[fewshot_examples]]
+en = "So the question is..."
+ja = "問題は、"
+fluency = 1
+accuracy = 1
+conciseness = 1
+
+[[fewshot_examples]]
+en = "They stay the same, or in this case, through the life of the record."
+ja = "これらは生涯変わらない属性で、レコードの寿命を通じても同じままです。"
+fluency = 1
+accuracy = 0
+conciseness = 0
+
+[[fewshot_examples]]
+en = "Through our simulations, we help you predict the future. "
+ja = "私たちのシミュレーションを通じて、私たちはみなさんが未来を予測するお手伝いをします。"
+fluency = 1
+accuracy = 1
+conciseness = 0
+
+[[fewshot_examples]]
+en = "This is not unique to pre-engineered metal buildings."
+ja = "これは固有の問題ではありません。プレエンジニアード金属建築に限りません。"
+fluency = 0
+accuracy = 0
+conciseness = 0
+
+[[fewshot_examples]]
+en = "We've been coming here for a very long time."
+ja = "ここに来てから非常に長い時間が経ちました。"
+fluency = 1
+accuracy = 1
+conciseness = 1
+
+[[fewshot_examples]]
+en = "That's a sign that they have, A, uh, gone and looked at your visuals, understood it, and then it's inspired a second level question."
+ja = "それは、彼らがまずあなたのビジュアルを見て理解し、そのうえで第二段階の質問を思いついたというサインです。"
+fluency = 1
+accuracy = 1
+conciseness = 1
+
+[[fewshot_examples]]
+en = "NVIDIA builds time machines."
+ja = "NVIDIAがつくるのはタイムマシンです。"
+fluency = 1
+accuracy = 1
+conciseness = 1
+
+[[fewshot_examples]]
+en = "But if you do love trigonometry and you want support us there's only one place to do that and that's on locals yes locals is a brilliant platform that has been incredibly supportive to our show and other problematic creators the great thing about locals is that it's a community for people who love trigonometry."
+ja = "もしあなたが三角法を愛し、サポートしたいなら、そのための唯一の場所はLocalsです。そう、Localsは私たちの番組や他の問題発言クリエイターを非常に支援してくれる素晴らしいプラットフォームです。Localsの素晴らしいところは、三角法が好きな人々のコミュニティだということです。"
+fluency = 1
+accuracy = 0
+conciseness = 1
+
+[[fewshot_examples]]
+en = "And so it's incredibly exciting for me to partner with SoftBank to make this possible in Japan. "
+ja = "そして、私にとって非常に興奮することですソフトバンクと提携できることは日本で実現するために。"
+fluency = 0
+accuracy = 1
+conciseness = 0
