@@ -33,6 +33,7 @@ retry_interval_seconds = 5.0
 sample_rate = 24000
 chunk_ms = 40
 # label = "partner_en2ja_staging"      # free-form, used in output filenames
+# delay = 10                           # backend-specific kwarg (kotoba-sdk only); see note below
 
 [transcribe]                           # Gemini source + target transcription
 model = "gemini-2.5-flash"
@@ -48,6 +49,13 @@ model = "gpt-5"
 # version = "v1.1"
 max_workers = 32
 ```
+
+### Backend-specific keys
+
+Any extra key under `[translate]` is forwarded as a kwarg to the chosen backend's constructor. Unknown keys for that backend raise `TypeError` at startup — typos and cross-backend mix-ups fail loud rather than getting silently dropped.
+
+- `kotoba-sdk` accepts `delay` (int) — forwarded to `AsyncKotobaClient.s2st.stream(delay=...)` to tune server-side pacing.
+- `openai-realtime` accepts `input_transcription_model` and `noise_reduction`; both are off by default (see [`docs/config-reference.md`](../docs/config-reference.md)).
 
 ## Examples
 

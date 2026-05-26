@@ -13,6 +13,9 @@ backend = "kotoba-sdk"
 max_concurrency = 2
 max_retries = 3
 label = "smoke_en2ja"
+# Backend-specific kwargs pass through (TranslateConfig is extra="allow").
+# `delay` is kotoba-sdk only — forwarded to AsyncKotobaClient.s2st.stream(delay=...).
+# delay = 10
 
 [transcribe]
 model = "gemini-2.5-flash"
