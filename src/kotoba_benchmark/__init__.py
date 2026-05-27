@@ -19,7 +19,13 @@ from kotoba_benchmark.config import (
     TranscribeConfig,
     TranslateConfig,
 )
-from kotoba_benchmark.pipeline import Result, evaluate, evaluate_async, re_render_summary
+from kotoba_benchmark.pipeline import (
+    Result,
+    evaluate,
+    evaluate_async,
+    re_render_summary,
+    render_summary_from_dataset,
+)
 
 __all__ = [
     "AlignConfig",
@@ -31,4 +37,5 @@ __all__ = [
     "evaluate",
     "evaluate_async",
     "re_render_summary",
+    "render_summary_from_dataset",
 ]
