@@ -95,6 +95,10 @@ class Config(BaseModel):
     # --- summary ---
     write_summary: Literal["json", "json+md", "json+md+html", "none"] = "json+md+html"
 
+    # --- ux ---
+    progress: bool | None = None
+    """Render per-stage progress bars. None (default) enables them only when stderr is a TTY."""
+
     # --- in-memory backend instance (Python API only; not serializable to TOML) ---
     translate_backend: Any | None = Field(default=None, exclude=True)
 
@@ -115,6 +119,12 @@ class Config(BaseModel):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Config:
         return cls(**data)
+
+    def show_progress(self) -> bool:
+        """Resolve whether to render progress bars. None auto-detects a TTY on stderr."""
+        if self.progress is None:
+            return sys.stderr.isatty()
+        return self.progress
 
     def dataset_tag(self) -> str:
         """Stable identifier used in output filenames."""

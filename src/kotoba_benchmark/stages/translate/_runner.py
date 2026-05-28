@@ -12,6 +12,7 @@ from typing import Any
 import datasets as ds
 import numpy as np
 import soundfile as sf
+from tqdm import tqdm
 
 from kotoba_benchmark.config import Config
 from kotoba_benchmark.stages.translate import TranslateBackend, get_backend
@@ -156,10 +157,18 @@ async def translate_dataset_async(
     sample_rate = config.translate.sample_rate
     semaphore = asyncio.Semaphore(config.translate.max_concurrency)
 
+    rows = [dataset[i] for i in range(len(dataset))]
+    pbar = tqdm(
+        total=len(rows),
+        desc="translate",
+        unit="file",
+        disable=not config.show_progress(),
+    )
+
     async def _process(idx: int, row: dict) -> dict[str, Any]:
         async with semaphore:
             pcm16 = _row_pcm16(row[source_col], sample_rate)
-            return await _translate_one(
+            result = await _translate_one(
                 backend=backend,
                 sample_id=str(row.get("id", idx)),
                 pcm16=pcm16,
@@ -170,10 +179,14 @@ async def translate_dataset_async(
                 retry_interval_seconds=config.translate.retry_interval_seconds,
                 output_audio_dir=output_audio_dir,
             )
+            pbar.update(1)
+            return result
 
-    rows = [dataset[i] for i in range(len(dataset))]
     tasks = [_process(i, row) for i, row in enumerate(rows)]
-    results = await asyncio.gather(*tasks)
+    try:
+        results = await asyncio.gather(*tasks)
+    finally:
+        pbar.close()
 
     ok = sum(1 for r in results if r["ok"])
     logger.info("translate stage complete: %d/%d ok", ok, len(results))
