@@ -101,6 +101,7 @@ def score_dataset(*, dataset: ds.Dataset, config: Config, output_dir: Path) -> d
         rps_limit=config.evaluate.rps_limit,
         request_timeout_sec=config.evaluate.request_timeout_seconds,
         prompt_path=prompt_path,
+        show_progress=config.show_progress(),
     )
 
     aligned_source = dataset["aligned_source_segments"]

@@ -17,6 +17,7 @@ import datasets as ds
 import numpy as np
 import soundfile as sf
 from google import genai
+from tqdm import tqdm
 
 
 _CLIENT_LOCAL = threading.local()
@@ -738,6 +739,7 @@ def transcribe_dataset_with_gemini(
     max_retries: int = 3,
     retry_base_seconds: float = 1.0,
     max_workers: int = 32,
+    show_progress: bool = True,
 ) -> ds.Dataset:
     logger = logging.getLogger(__name__)
     if not logging.getLogger().handlers:
@@ -786,12 +788,20 @@ def transcribe_dataset_with_gemini(
         log_every = max(1, total // 20)
         min_log_interval = 30.0
 
-        for future in as_completed(futures):
+        for future in tqdm(
+            as_completed(futures),
+            total=total,
+            desc=f"transcribe ({input_lang})",
+            unit="file",
+            disable=not show_progress,
+        ):
             index, timestamps = future.result()
             results[index] = timestamps
             completed += 1
             now = time.monotonic()
-            should_log = (
+            # When the bar is shown it carries progress; otherwise fall back to
+            # throttled log lines so non-TTY runs (e.g. Slurm) still report progress.
+            should_log = not show_progress and (
                 completed == total
                 or completed % log_every == 0
                 or (now - last_log_time) >= min_log_interval
