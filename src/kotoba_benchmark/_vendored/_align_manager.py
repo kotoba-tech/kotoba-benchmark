@@ -190,6 +190,7 @@ class TextAlignmentManager:
         # model_name: str = "gpt-4.1-mini",
         # model_name: str = "gpt-4.1",
         prompt_path: Path | str = "src/align_segments/prompt/v1.0.toml",
+        show_progress: bool = True,
     ):
         self.prompt_path = Path(prompt_path)
 
@@ -198,6 +199,7 @@ class TextAlignmentManager:
         self.max_worker = max_workers  # Backward-compatibility
         self.rps_limit = rps_limit
         self.request_timeout_sec = request_timeout_sec
+        self.show_progress = show_progress
 
         self.source_lang = source_lang
         self.target_lang = target_lang
@@ -758,7 +760,8 @@ class TextAlignmentManager:
             for future in tqdm(
                 as_completed(futures),
                 total=len(futures),
-                desc="Processing items",
+                desc="align",
+                disable=not self.show_progress,
             ):
                 key = futures[future]
                 try:
