@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,8 @@ from kotoba_benchmark.stages.translate._runner import (
 )
 
 logger = logging.getLogger(__name__)
+
+_PAIR_RE = re.compile(r"(?:^|__)([a-z]{2,3})2([a-z]{2,3})(?:__|$)")
 
 
 @dataclass
@@ -179,3 +182,58 @@ def re_render_summary(output_dir: str | Path) -> dict[str, Path]:
         translate={"backend": "kotoba-sdk", "label": base_tag},  # type: ignore[arg-type]
     )
     return write_summary(dataset=dataset, config=config, output_dir=output_dir)
+
+
+def _dataset_name(dataset: str | Path) -> str:
+    dataset_spec = str(dataset).rstrip("/")
+    return dataset_spec.rsplit("/", 1)[-1]
+
+
+def _infer_lang_pair(dataset: str | Path) -> tuple[str, str]:
+    name = _dataset_name(dataset)
+    match = _PAIR_RE.search(name)
+    if not match:
+        raise ValueError(
+            "could not infer source/target language pair from dataset name "
+            f"{name!r}; pass source_lang and target_lang explicitly"
+        )
+    return match.group(1), match.group(2)
+
+
+def render_summary_from_dataset(
+    dataset: str | Path,
+    *,
+    source_lang: str | None = None,
+    target_lang: str | None = None,
+    output_dir: str | Path | None = None,
+    split: str = "train",
+    label: str | None = None,
+) -> dict[str, Path]:
+    """Render summary files from an already-scored HF or local dataset.
+
+    This does not run translate/transcribe/align/score. The dataset is expected
+    to contain the scored columns written by the benchmark pipeline.
+    """
+
+    dataset_spec = Path(dataset).expanduser() if isinstance(dataset, Path) else dataset
+    dataset_path = Path(str(dataset_spec)).expanduser()
+    if dataset_path.exists() and dataset_path.is_dir():
+        loaded = ds.load_from_disk(str(dataset_path))
+    else:
+        loaded = ds.load_dataset(str(dataset), split=split)
+
+    if source_lang is None or target_lang is None:
+        inferred_source, inferred_target = _infer_lang_pair(dataset)
+        source_lang = source_lang or inferred_source
+        target_lang = target_lang or inferred_target
+
+    base_label = label or _dataset_name(dataset)
+    out = Path(output_dir or (Path("./out") / base_label)).expanduser().resolve()
+    config = Config(
+        dataset=str(dataset),
+        source_lang=source_lang,
+        target_lang=target_lang,
+        output_dir=out,
+        translate={"backend": "kotoba-sdk", "label": base_label},  # type: ignore[arg-type]
+    )
+    return write_summary(dataset=loaded, config=config, output_dir=out)

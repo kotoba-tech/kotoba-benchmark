@@ -57,6 +57,15 @@ print(result.scores)   # accuracy, fluency, conciseness, latency
 
 The summary files are written automatically to `config.output_dir`. Call `result.write_summary("./other_dir")` to also write them somewhere else.
 
+## Render Existing Results
+
+To re-render summary files from a previous local run without rerunning translation,
+transcription, alignment, or scoring:
+
+```bash
+kotoba-benchmark report ./out
+```
+
 See [`examples/quickstart.py`](examples/quickstart.py) for a complete runnable script, [`docs/quickstart.md`](docs/quickstart.md) for the partner walkthrough, [`docs/config-reference.md`](docs/config-reference.md) for every TOML field, and [`docs/metrics.md`](docs/metrics.md) for what the scores mean.
 
 ## Benchmarking non-Kotoba systems
