@@ -86,6 +86,7 @@ def align_dataset(
         rps_limit=config.align.rps_limit,
         request_timeout_sec=config.align.request_timeout_seconds,
         prompt_path=prompt_path,
+        show_progress=config.show_progress(),
     )
 
     source_inputs: list[list[dict] | None] = [

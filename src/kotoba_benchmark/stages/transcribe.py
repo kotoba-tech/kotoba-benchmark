@@ -40,6 +40,7 @@ def transcribe_dataset(*, dataset: ds.Dataset, config: Config) -> ds.Dataset:
         request_timeout_seconds=tc.request_timeout_seconds,
         max_retries=tc.max_retries,
         max_workers=tc.max_workers,
+        show_progress=config.show_progress(),
     )
 
     logger.info("transcribing target audio (%s)...", config.target_lang)
@@ -54,6 +55,7 @@ def transcribe_dataset(*, dataset: ds.Dataset, config: Config) -> ds.Dataset:
         request_timeout_seconds=tc.request_timeout_seconds,
         max_retries=tc.max_retries,
         max_workers=tc.max_workers,
+        show_progress=config.show_progress(),
     )
 
     return dataset

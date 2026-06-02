@@ -88,9 +88,11 @@ class TranslationEvaluationManager:
         # model_name: str = "gpt-5-mini",
         version: str = "v1.1",
         prompt_path: Path | str = None,
+        show_progress: bool = True,
     ):
         self.source_lang = source_lang
         self.target_lang = target_lang
+        self.show_progress = show_progress
 
         if prompt_path is None:
             prompt_path = f"src/translation_evaluation/prompt/{source_lang}2{target_lang}-{version}.toml"
@@ -495,7 +497,8 @@ class TranslationEvaluationManager:
             for future in tqdm(
                 as_completed(futures),
                 total=len(futures),
-                desc="Evaluating translations",
+                desc="score",
+                disable=not self.show_progress,
             ):
                 key = futures[future]
                 try:

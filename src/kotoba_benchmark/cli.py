@@ -72,6 +72,8 @@ def _load_config(args: argparse.Namespace) -> Config:
         data["output_dir"] = args.output_dir
     if args.wav_dir:
         data["wav_dir"] = args.wav_dir
+    if args.progress is not None:
+        data["progress"] = args.progress
 
     data = _apply_overrides(data, args.override or [])
     return Config.from_dict(data)
@@ -154,6 +156,12 @@ def main(argv: list[str] | None = None) -> int:
             action="append",
             metavar="KEY=VALUE",
             help="Override config field (e.g. translate.url=wss://...). Repeatable.",
+        )
+        p.add_argument(
+            "--progress",
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help="Show progress bars (default: auto — on when stderr is a TTY).",
         )
 
     p_run = sub.add_parser("run", help="Run an evaluation from a TOML config")
