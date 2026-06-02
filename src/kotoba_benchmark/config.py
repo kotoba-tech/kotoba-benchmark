@@ -80,6 +80,14 @@ class Config(BaseModel):
     dataset: str | Path | None = None
     """HF dataset name or local save_to_disk path. Mutually exclusive with wav_dir."""
 
+    dataset_subset: str | None = None
+    """HF dataset config/subset name, passed as `load_dataset(name=...)`. Hub loads only."""
+    dataset_split: str = "train"
+    """Split to load from a hub dataset (ignored for wav_dir / load_from_disk)."""
+    input_audio_column: str | None = None
+    """Source audio column in the loaded dataset. When set (and different), it is renamed
+    to the canonical `audio_<source_lang>` so the rest of the pipeline is unchanged."""
+
     source_lang: str
     target_lang: str
 
@@ -91,6 +99,9 @@ class Config(BaseModel):
     transcribe: TranscribeConfig = Field(default_factory=TranscribeConfig)
     align: AlignConfig = Field(default_factory=AlignConfig)
     evaluate: EvaluateConfig = Field(default_factory=EvaluateConfig)
+
+    stop_after: Literal["translate", "transcribe", "align", "score"] = "score"
+    """Stop the pipeline after this stage; downstream stages are skipped. Default runs all."""
 
     # --- summary ---
     write_summary: Literal["json", "json+md", "json+md+html", "none"] = "json+md+html"

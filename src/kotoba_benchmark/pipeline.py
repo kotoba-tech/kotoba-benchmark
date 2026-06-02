@@ -15,7 +15,12 @@ import kotoba_benchmark.stages.translate.kotoba_sdk  # noqa: F401
 import kotoba_benchmark.stages.translate.openai_realtime  # noqa: F401
 from kotoba_benchmark._audio import dataset_from_wav_dir
 from kotoba_benchmark.config import Config
-from kotoba_benchmark.report import build_summary, write_summary
+from kotoba_benchmark.report import (
+    build_summary,
+    build_translate_summary,
+    write_summary,
+    write_translate_summary,
+)
 from kotoba_benchmark.stages.align import align_dataset
 from kotoba_benchmark.stages.score import score_dataset
 from kotoba_benchmark.stages.transcribe import transcribe_dataset
@@ -24,6 +29,13 @@ from kotoba_benchmark.stages.translate._runner import (
 )
 
 logger = logging.getLogger(__name__)
+
+_STAGE_ORDER = ("translate", "transcribe", "align", "score")
+
+
+def _runs(stop_after: str, stage: str) -> bool:
+    """True if `stage` should run given the configured stop point."""
+    return _STAGE_ORDER.index(stage) <= _STAGE_ORDER.index(stop_after)
 
 
 @dataclass
@@ -59,8 +71,21 @@ def _load_input_dataset(config: Config) -> ds.Dataset:
     dataset_spec = str(config.dataset)
     p = Path(dataset_spec).expanduser()
     if p.exists() and p.is_dir():
-        return ds.load_from_disk(str(p))
-    return ds.load_dataset(dataset_spec, split="train")
+        dataset = ds.load_from_disk(str(p))
+    else:
+        dataset = ds.load_dataset(
+            dataset_spec, name=config.dataset_subset, split=config.dataset_split
+        )
+
+    canonical = f"audio_{config.source_lang}"
+    if config.input_audio_column and config.input_audio_column != canonical:
+        if config.input_audio_column not in dataset.column_names:
+            raise KeyError(
+                f"input_audio_column {config.input_audio_column!r} not found; "
+                f"dataset has columns {dataset.column_names}"
+            )
+        dataset = dataset.rename_column(config.input_audio_column, canonical)
+    return dataset
 
 
 def _stage_cache_path(output_dir: Path, stage: str, tag: str) -> Path:
@@ -105,6 +130,21 @@ async def evaluate_async(config: Config) -> Result:
     else:
         logger.info("[1/4] translate: using cached %s", translate_cache.name)
 
+    if not _runs(config.stop_after, "transcribe"):
+        logger.info("stop_after=translate: skipping transcribe/align/score")
+        summary_paths = write_translate_summary(
+            dataset=dataset, config=config, output_dir=output_dir
+        )
+        summary = build_translate_summary(dataset=dataset, config=config)
+        return Result(
+            tag=tag,
+            output_dir=output_dir,
+            dataset=dataset,
+            summary=summary,
+            summary_paths=summary_paths,
+            config=config,
+        )
+
     # --- stage 2: transcribe ---
     transcribe_cache = _stage_cache_path(output_dir, "transcribe", tag)
     cached = _load_stage_cache(transcribe_cache)
@@ -116,6 +156,17 @@ async def evaluate_async(config: Config) -> Result:
         logger.info("[2/4] transcribe: using cached %s", transcribe_cache.name)
         dataset = cached
 
+    if not _runs(config.stop_after, "align"):
+        logger.info("stop_after=transcribe: skipping align/score (no summary written)")
+        return Result(
+            tag=tag,
+            output_dir=output_dir,
+            dataset=dataset,
+            summary={},
+            summary_paths={},
+            config=config,
+        )
+
     # --- stage 3: align ---
     align_cache = _stage_cache_path(output_dir, "align", tag)
     cached = _load_stage_cache(align_cache)
@@ -126,6 +177,17 @@ async def evaluate_async(config: Config) -> Result:
     else:
         logger.info("[3/4] align: using cached %s", align_cache.name)
         dataset = cached
+
+    if not _runs(config.stop_after, "score"):
+        logger.info("stop_after=align: skipping score (no summary written)")
+        return Result(
+            tag=tag,
+            output_dir=output_dir,
+            dataset=dataset,
+            summary={},
+            summary_paths={},
+            config=config,
+        )
 
     # --- stage 4: score ---
     score_cache = _stage_cache_path(output_dir, "score", tag)

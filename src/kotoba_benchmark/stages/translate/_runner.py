@@ -30,10 +30,24 @@ def _resample_to(audio: np.ndarray, src_rate: int, tgt_rate: int) -> np.ndarray:
     return (np.clip(resampled, -1.0, 1.0) * 32768.0).astype(np.int16)
 
 
-def _row_pcm16(audio_dict: dict, target_rate: int) -> bytes:
+def _audio_array_and_rate(audio: Any) -> tuple[np.ndarray, int]:
+    """Normalize an HF Audio column entry to (array, sample_rate).
+
+    Supports both the legacy `{"array", "sampling_rate"}` dict and the torchcodec
+    `AudioDecoder` returned by `datasets >= 4.0`.
+    """
+    if hasattr(audio, "get_all_samples"):  # torchcodec AudioDecoder
+        samples = audio.get_all_samples()
+        array = samples.data.numpy()  # float32 [-1, 1], shape [channels, samples]
+        if array.ndim > 1:
+            array = array.mean(axis=0)  # channel-first → mono
+        return array, int(samples.sample_rate)
+    return audio["array"], audio["sampling_rate"]
+
+
+def _row_pcm16(audio: Any, target_rate: int) -> bytes:
     """Decode an HF Audio column entry to PCM16 bytes at `target_rate`."""
-    array = audio_dict["array"]
-    src_rate = audio_dict["sampling_rate"]
+    array, src_rate = _audio_array_and_rate(audio)
     if array.dtype.kind == "f":
         pcm = np.clip(array, -1.0, 1.0)
         pcm = (pcm * 32767.0).astype(np.int16)
