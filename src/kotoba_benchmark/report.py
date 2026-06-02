@@ -895,3 +895,128 @@ def write_summary(
         logger.info("wrote %s", html_path)
 
     return written
+
+
+def build_translate_summary(*, dataset: ds.Dataset, config: Config) -> dict[str, Any]:
+    """Summary for a translate-only run (stop_after='translate').
+
+    Reads only the columns the translate stage produces: `translation_text` and
+    `_translate_meta`. No transcribe/align/score columns required.
+    """
+    translate_meta = dataset["_translate_meta"]
+    translations = dataset["translation_text"]
+    ids = dataset["id"] if "id" in dataset.column_names else list(range(len(dataset)))
+
+    n_total = len(dataset)
+    n_ok = sum(1 for m in translate_meta if m and m.get("ok"))
+    first_lat = [
+        m["first_chunk_latency_s"]
+        for m in translate_meta
+        if m and m.get("first_chunk_latency_s") is not None
+    ]
+    last_lat = [
+        m["last_chunk_latency_s"]
+        for m in translate_meta
+        if m and m.get("last_chunk_latency_s") is not None
+    ]
+
+    entries = []
+    for i in range(n_total):
+        meta = translate_meta[i] or {}
+        entries.append({
+            "id": str(ids[i]),
+            "ok": meta.get("ok", False),
+            "translation_text": translations[i] if i < len(translations) else "",
+            "output_audio_path": meta.get("output_wav"),
+            "first_chunk_latency_s": meta.get("first_chunk_latency_s"),
+            "last_chunk_latency_s": meta.get("last_chunk_latency_s"),
+            "n_chunks_sts": meta.get("n_chunks"),
+            "attempts": meta.get("attempts"),
+        })
+
+    return {
+        "run": {
+            "tag": config.dataset_tag(),
+            "created_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            "source_lang": config.source_lang,
+            "target_lang": config.target_lang,
+            "translate_backend": config.translate.backend,
+            "translate_url": config.translate.url,
+            "stop_after": config.stop_after,
+        },
+        "metrics": {
+            "n_total": n_total,
+            "n_ok": n_ok,
+            "success_rate": n_ok / n_total if n_total else None,
+            "median_first_chunk_latency_s": (
+                statistics.median(first_lat) if first_lat else None
+            ),
+            "median_last_chunk_latency_s": (
+                statistics.median(last_lat) if last_lat else None
+            ),
+        },
+        "audio_entries": entries,
+    }
+
+
+def _build_translate_markdown(summary: dict[str, Any]) -> str:
+    run = summary["run"]
+    m = summary["metrics"]
+    lines = [
+        f"# {run['tag']} (translate-only)\n",
+        f"- created_at: `{run['created_at']}`",
+        f"- source → target: `{run['source_lang']} → {run['target_lang']}`",
+        f"- translate backend: `{run['translate_backend']}`",
+    ]
+    if run.get("translate_url"):
+        lines.append(f"- url: `{run['translate_url']}`")
+    lines += [
+        "",
+        "## Metrics\n",
+        f"- total: {m['n_total']}",
+        f"- ok: {m['n_ok']}",
+        f"- success rate: {_format_optional(m['success_rate'])}",
+        f"- median first-chunk latency (s): {_format_optional(m['median_first_chunk_latency_s'])}",
+        f"- median last-chunk latency (s): {_format_optional(m['median_last_chunk_latency_s'])}",
+        "",
+        "## Per-clip translations\n",
+        "| id | ok | 1st-chunk lat (s) | translation |",
+        "| --- | --- | --- | --- |",
+    ]
+    for e in summary["audio_entries"]:
+        text = (e["translation_text"] or "").replace("\n", " ").replace("|", "\\|")
+        lines.append(
+            f"| {e['id']} | {e['ok']} | "
+            f"{_format_optional(e['first_chunk_latency_s'])} | {text} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def write_translate_summary(
+    *, dataset: ds.Dataset, config: Config, output_dir: Path
+) -> dict[str, Path]:
+    """Write the translate-only summary (JSON always; MD when configured)."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    written: dict[str, Path] = {}
+    mode = config.write_summary
+    if mode == "none":
+        return written
+
+    summary = build_translate_summary(dataset=dataset, config=config)
+    tag = config.dataset_tag()
+
+    json_path = output_dir / f"{tag}__translate_summary.json"
+    json_path.write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    written["json"] = json_path
+    logger.info("wrote %s", json_path)
+
+    if mode in {"json+md", "json+md+html"}:
+        md_path = output_dir / f"{tag}__translate_summary.md"
+        md_path.write_text(_build_translate_markdown(summary), encoding="utf-8")
+        written["md"] = md_path
+        logger.info("wrote %s", md_path)
+
+    return written

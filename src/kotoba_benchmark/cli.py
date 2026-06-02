@@ -55,9 +55,7 @@ def _apply_overrides(data: dict[str, Any], overrides: list[str]) -> dict[str, An
     return data
 
 
-def _cmd_run(args: argparse.Namespace) -> int:
-    import sys
-
+def _load_config(args: argparse.Namespace) -> Config:
     if sys.version_info >= (3, 11):
         import tomllib
     else:  # pragma: no cover
@@ -76,7 +74,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         data["wav_dir"] = args.wav_dir
 
     data = _apply_overrides(data, args.override or [])
-    config = Config.from_dict(data)
+    return Config.from_dict(data)
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    config = _load_config(args)
 
     from kotoba_benchmark.pipeline import evaluate
 
@@ -93,6 +95,27 @@ def _cmd_run(args: argparse.Namespace) -> int:
     print(f"  row_fluency_mean: {metrics['row_fluency_mean']}")
     print(f"  row_conciseness_mean: {metrics['row_conciseness_mean']}")
     print(f"  median_latency_chunk_s: {metrics['median_latency_chunk']}")
+    return 0
+
+
+def _cmd_translate(args: argparse.Namespace) -> int:
+    config = _load_config(args).model_copy(update={"stop_after": "translate"})
+
+    from kotoba_benchmark.pipeline import evaluate
+
+    result = evaluate(config)
+
+    print()
+    print(f"Tag: {result.tag}")
+    print(f"Output dir: {result.output_dir}")
+    print(f"Summary: {result.summary_paths}")
+    print()
+    print("Translate metrics:")
+    metrics = result.summary["metrics"]
+    print(f"  total: {metrics['n_total']}")
+    print(f"  ok: {metrics['n_ok']}")
+    print(f"  success_rate: {metrics['success_rate']}")
+    print(f"  median_first_chunk_latency_s: {metrics['median_first_chunk_latency_s']}")
     return 0
 
 
@@ -122,17 +145,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    def _add_config_args(p: argparse.ArgumentParser) -> None:
+        p.add_argument("config", help="Path to a TOML config")
+        p.add_argument("--output-dir", help="Override output_dir from config")
+        p.add_argument("--wav-dir", help="Override wav_dir from config")
+        p.add_argument(
+            "--override",
+            action="append",
+            metavar="KEY=VALUE",
+            help="Override config field (e.g. translate.url=wss://...). Repeatable.",
+        )
+
     p_run = sub.add_parser("run", help="Run an evaluation from a TOML config")
-    p_run.add_argument("config", help="Path to a TOML config")
-    p_run.add_argument("--output-dir", help="Override output_dir from config")
-    p_run.add_argument("--wav-dir", help="Override wav_dir from config")
-    p_run.add_argument(
-        "--override",
-        action="append",
-        metavar="KEY=VALUE",
-        help="Override config field (e.g. translate.url=wss://...). Repeatable.",
-    )
+    _add_config_args(p_run)
     p_run.set_defaults(func=_cmd_run)
+
+    p_translate = sub.add_parser(
+        "translate",
+        help="Run only the translate stage (skip transcribe/align/score)",
+    )
+    _add_config_args(p_translate)
+    p_translate.set_defaults(func=_cmd_translate)
 
     p_report = sub.add_parser(
         "report", help="Re-render summary files from a previous run's output_dir"
