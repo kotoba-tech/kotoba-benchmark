@@ -1,5 +1,5 @@
 # Smoke test: en→ja against a Kotoba staging endpoint.
-# Uses the bundled 10s English clip — quickest path from `pip install` to a result.
+# Uses the bundled English clip (examples/audio/en/example.mp3) — quickest path from `pip install` to a result.
 
 wav_dir = "./examples/audio/en"
 source_lang = "en"

@@ -22,9 +22,10 @@ export GEMINI_API_KEY=...   # transcription + LLM judge (default)
 
 | File | Duration | Used by |
 |---|---|---|
-| [`audio/en/sample_10s.wav`](audio/en/sample_10s.wav) | 10 s, English, 24 kHz mono PCM16 | [`../configs/en2ja_smoke.toml`](../configs/en2ja_smoke.toml) |
+| [`audio/en/example.mp3`](audio/en/example.mp3) | 55 s, English, 44.1 kHz stereo MP3 | [`../configs/en2ja_smoke.toml`](../configs/en2ja_smoke.toml) |
+| [`audio/ja/example.mp3`](audio/ja/example.mp3) | 17 s, Japanese, 44.1 kHz stereo MP3 | sample ja→en input |
 
-This is the only clip shipped with the repo. The smoke config evaluates this one file end-to-end as the quickest "did everything wire up?" check (~30 s wall-clock for translate + ~30 s for the LLM stages).
+These are the clips shipped with the repo. The smoke config evaluates `audio/en/example.mp3` end-to-end as the quickest "did everything wire up?" check (input is paced at wall-clock rate, so translate takes roughly as long as the clip, plus ~30 s for the LLM stages).
 
 For real evaluations, point `wav_dir` at your own directory of WAVs.
 
