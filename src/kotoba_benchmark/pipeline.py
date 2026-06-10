@@ -179,9 +179,13 @@ def re_render_summary(output_dir: str | Path) -> dict[str, Path]:
         source_lang=source_lang,
         target_lang=target_lang,
         output_dir=output_dir,
-        translate={"backend": "kotoba-sdk", "label": base_tag},  # type: ignore[arg-type]
+        translate={"backend": _infer_backend_from_label(base_tag), "label": base_tag},  # type: ignore[arg-type]
     )
     return write_summary(dataset=dataset, config=config, output_dir=output_dir)
+
+
+def _infer_backend_from_label(label: str) -> str:
+    return "openai-realtime" if "openai" in label.lower() else "kotoba-sdk"
 
 
 def _dataset_name(dataset: str | Path) -> str:
@@ -234,6 +238,6 @@ def render_summary_from_dataset(
         source_lang=source_lang,
         target_lang=target_lang,
         output_dir=out,
-        translate={"backend": "kotoba-sdk", "label": base_label},  # type: ignore[arg-type]
+        translate={"backend": _infer_backend_from_label(base_label), "label": base_label},  # type: ignore[arg-type]
     )
     return write_summary(dataset=loaded, config=config, output_dir=out)
