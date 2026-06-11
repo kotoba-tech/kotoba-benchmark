@@ -6,7 +6,9 @@ import datetime as _dt
 import html
 import json
 import logging
+import math
 import os
+import re
 import statistics
 import urllib.parse
 from pathlib import Path
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 _SCORE_KEYS = ("accuracy", "fluency", "conciseness")
+_DELAY_LABEL_RE = re.compile(r"(?:^|[_-])delay(?P<delay>\d+(?:\.\d+)?)(?:[_-]|$)", re.IGNORECASE)
 
 
 def _is_number(value: Any) -> bool:
@@ -86,13 +89,13 @@ def _collect_summary_metrics(
         if "_translate_meta" in dataset.column_names
         else [{} for _ in range(len(dataset))]
     )
-    if "latencies" in dataset.column_names:
-        latencies = dataset["latencies"]
-    else:
-        source_col = _timestamp_column(dataset, config.source_lang)
-        target_col = _timestamp_column(dataset, config.target_lang)
-        source_all = dataset[source_col] if source_col else []
-        target_all = dataset[target_col] if target_col else []
+    source_col = _timestamp_column(dataset, config.source_lang)
+    target_col = _timestamp_column(dataset, config.target_lang)
+    source_all = dataset[source_col] if source_col else []
+    target_all = dataset[target_col] if target_col else []
+    default_backend = _report_backend(config)
+    default_delay = _report_delay(config)
+    if source_col and target_col:
         latencies = [
             [
                 chunk["start_latency_s"]
@@ -100,12 +103,21 @@ def _collect_summary_metrics(
                     rows_output[i],
                     source_all[i] if i < len(source_all) else None,
                     target_all[i] if i < len(target_all) else None,
+                    _target_time_offset_s(
+                        translate_meta[i] if i < len(translate_meta) else None,
+                        default_backend=default_backend,
+                        default_delay=default_delay,
+                    ),
                 )
                 if chunk.get("contributes_latency")
                 and chunk.get("start_latency_s") is not None
             ]
             for i in range(len(dataset))
         ]
+    elif "latencies" in dataset.column_names:
+        latencies = dataset["latencies"]
+    else:
+        latencies = [[] for _ in range(len(dataset))]
 
     rows_total = len(dataset)
     rows_with_output = sum(1 for r in rows_output if r)
@@ -210,6 +222,8 @@ def _audio_entries(
     target_chunks_col = _timestamp_column(dataset, config.target_lang)
     source_chunks_all = dataset[source_chunks_col] if source_chunks_col else []
     target_chunks_all = dataset[target_chunks_col] if target_chunks_col else []
+    default_backend = _report_backend(config)
+    default_delay = _report_delay(config)
 
     for i in range(len(dataset)):
         meta = translate_meta[i] or {}
@@ -226,16 +240,75 @@ def _audio_entries(
                 rows_output[i],
                 source_chunks_all[i] if i < len(source_chunks_all) else None,
                 target_chunks_all[i] if i < len(target_chunks_all) else None,
+                _target_time_offset_s(meta, default_backend=default_backend, default_delay=default_delay),
             ),
             **means,
         })
     return entries
 
 
+def _report_backend(config: Config) -> str:
+    backend = getattr(config.translate, "backend", None)
+    label = getattr(config.translate, "label", None)
+    if backend:
+        return str(backend)
+    if isinstance(label, str) and "openai" in label.lower():
+        return "openai-realtime"
+    return ""
+
+
+def _report_delay(config: Config) -> float | None:
+    delay = getattr(config.translate, "delay", None)
+    if _is_number(delay):
+        return float(delay)
+    if isinstance(delay, str):
+        try:
+            return float(delay)
+        except ValueError:
+            pass
+
+    label = getattr(config.translate, "label", None)
+    if isinstance(label, str):
+        match = _DELAY_LABEL_RE.search(label)
+        if match:
+            return float(match.group("delay"))
+    return None
+
+
+def _target_time_offset_s(
+    meta: dict[str, Any] | None,
+    *,
+    default_backend: str = "",
+    default_delay: float | None = None,
+) -> float:
+    """Approximate target chunks on the live timeline.
+
+    Target transcript timestamps are relative to the saved output WAV, which
+    starts at received audio and therefore omits the live wait before output.
+    Shift Kotoba target chunks right by the configured server delay window.
+    """
+    backend = default_backend
+    delay = default_delay
+    if isinstance(meta, dict):
+        backend = str(meta.get("backend") or backend)
+        delay = meta.get("delay") if meta.get("delay") is not None else delay
+    if backend != "kotoba-sdk":
+        return 0.0
+    if _is_number(delay):
+        return float(delay) * 0.08
+    if isinstance(delay, str):
+        try:
+            return float(delay) * 0.08
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
 def _timeline_chunks(
     outputs: list[dict] | None,
     source_chunks: list[dict] | None,
     target_chunks: list[dict] | None,
+    target_time_offset_s: float = 0.0,
 ) -> list[dict[str, Any]]:
     """Build per-chunk timeline records and mirror the latency inclusion rule."""
     if not isinstance(outputs, list):
@@ -260,8 +333,18 @@ def _timeline_chunks(
         )
         src_start = src.get("start")
         src_end = src.get("end")
-        tgt_start = tgt.get("start")
-        tgt_end = tgt.get("end")
+        tgt_start_raw = tgt.get("start")
+        tgt_end_raw = tgt.get("end")
+        tgt_start = (
+            float(tgt_start_raw) + target_time_offset_s
+            if _is_number(tgt_start_raw)
+            else None
+        )
+        tgt_end = (
+            float(tgt_end_raw) + target_time_offset_s
+            if _is_number(tgt_end_raw)
+            else None
+        )
         accuracy = out.get("accuracy")
         valid_timestamps = all(
             _is_number(v) for v in (src_start, src_end, tgt_start, tgt_end)
@@ -290,6 +373,9 @@ def _timeline_chunks(
                     "text": str(tgt.get("text") or ""),
                     "start": float(tgt_start) if _is_number(tgt_start) else None,
                     "end": float(tgt_end) if _is_number(tgt_end) else None,
+                    "raw_start": float(tgt_start_raw) if _is_number(tgt_start_raw) else None,
+                    "raw_end": float(tgt_end_raw) if _is_number(tgt_end_raw) else None,
+                    "timeline_offset_s": target_time_offset_s,
                 },
                 "accuracy": float(accuracy) if _is_number(accuracy) else None,
                 "start_latency_s": start_latency if contributes_latency else None,
@@ -402,6 +488,8 @@ def _build_html(summary: dict[str, Any], output_path: Path) -> str:
     target_y = 92
     source_center_y = source_y + bar_height / 2
     target_center_y = target_y + bar_height / 2
+    timeline_axis_y = timeline_height - 24
+    timeline_tick_label_y = timeline_height - 12
     overview_width = 980.0
     overview_height = 96
     overview_left = 40.0
@@ -434,6 +522,68 @@ def _build_html(summary: dict[str, Any], output_path: Path) -> str:
         return _scale_range(
             value, min_time, span, overview_width, overview_left, overview_right
         )
+
+    def _format_time_tick(value: float) -> str:
+        if abs(value - round(value)) < 0.001:
+            return f"{int(round(value))}s"
+        return f"{value:.1f}s"
+
+    def _time_ticks(min_time: float, max_time: float, step_s: float = 30.0) -> list[float]:
+        ticks = [min_time, max_time]
+        first = math.ceil(min_time / step_s) * step_s
+        value = first
+        while value <= max_time + 1e-9:
+            ticks.append(value)
+            value += step_s
+        deduped: list[float] = []
+        seen: set[int] = set()
+        for tick in sorted(ticks):
+            key = int(round(tick * 1000))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(tick)
+        return deduped
+
+    def _time_axis(
+        *, min_time: float, max_time: float, span: float, timeline_width: float
+    ) -> str:
+        pieces = [
+            f'<line x1="{timeline_left:.0f}" y1="{timeline_axis_y:.0f}" '
+            f'x2="{timeline_width - timeline_right:.0f}" y2="{timeline_axis_y:.0f}" '
+            f'stroke="#d8dee4" />'
+        ]
+        for tick in _time_ticks(min_time, max_time):
+            x = _scale(tick, min_time, span, timeline_width)
+            pieces.append(
+                f'<line x1="{x:.2f}" y1="{timeline_axis_y - 4:.0f}" '
+                f'x2="{x:.2f}" y2="{timeline_axis_y + 4:.0f}" '
+                f'stroke="#d8dee4" />'
+            )
+            pieces.append(
+                f'<text x="{x:.2f}" y="{timeline_tick_label_y}" '
+                f'class="timeline-tick timeline-tick-centered">{_format_time_tick(tick)}</text>'
+            )
+        return "\n".join(pieces)
+
+    def _overview_time_axis(min_time: float, max_time: float, span: float) -> str:
+        pieces = [
+            f'<line x1="{overview_left:.0f}" y1="88" '
+            f'x2="{overview_width - overview_right:.0f}" y2="88" stroke="#d8dee4" />'
+        ]
+        last_label_x: float | None = None
+        for tick in _time_ticks(min_time, max_time):
+            x = _overview_scale(tick, min_time, span)
+            pieces.append(
+                f'<line x1="{x:.2f}" y1="84" x2="{x:.2f}" y2="90" stroke="#d8dee4" />'
+            )
+            if last_label_x is None or abs(x - last_label_x) >= 46.0:
+                pieces.append(
+                    f'<text x="{x:.2f}" y="93" class="timeline-tick timeline-tick-centered">'
+                    f'{_format_time_tick(tick)}</text>'
+                )
+                last_label_x = x
+        return "\n".join(pieces)
 
     def _bar(
         *,
@@ -610,7 +760,13 @@ def _build_html(summary: dict[str, Any], output_path: Path) -> str:
             )
         )
         axis_end = timeline_width - timeline_right
-        right_tick_x = max(timeline_left, axis_end - 42)
+        time_axis = _time_axis(
+            min_time=min_time,
+            max_time=max_time,
+            span=span,
+            timeline_width=timeline_width,
+        )
+        overview_time_axis = _overview_time_axis(min_time, max_time, span)
         markers = "\n".join(
             _latency_marker(chunk, min_time, span, timeline_width) for chunk in chunks
         )
@@ -686,8 +842,7 @@ def _build_html(summary: dict[str, Any], output_path: Path) -> str:
     <line x1="{timeline_left:.0f}" y1="{target_center_y:.0f}" x2="{axis_end:.0f}" y2="{target_center_y:.0f}" stroke="#d8dee4" />
     <text x="0" y="{source_center_y + 5:.0f}" class="timeline-label">src</text>
     <text x="0" y="{target_center_y + 5:.0f}" class="timeline-label">tgt</text>
-    <text x="{timeline_left:.0f}" y="{timeline_height - 12}" class="timeline-tick">{min_time:.1f}s</text>
-    <text x="{right_tick_x:.0f}" y="{timeline_height - 12}" class="timeline-tick">{max_time:.1f}s</text>
+    {time_axis}
     {markers}
     {source_bars}
     {target_bars}
@@ -701,8 +856,7 @@ def _build_html(summary: dict[str, Any], output_path: Path) -> str:
       <line x1="{overview_left:.0f}" y1="{overview_target_center_y:.0f}" x2="{overview_width - overview_right:.0f}" y2="{overview_target_center_y:.0f}" stroke="#d8dee4" />
       <text x="0" y="31" class="timeline-label">src</text>
       <text x="0" y="72" class="timeline-label">tgt</text>
-      <text x="{overview_left:.0f}" y="93" class="timeline-tick">{min_time:.1f}s</text>
-      <text x="{overview_width - overview_right - 40:.0f}" y="93" class="timeline-tick">{max_time:.1f}s</text>
+      {overview_time_axis}
       {overview_source_bars}
       {overview_target_bars}
       {overview_markers}
@@ -758,6 +912,7 @@ def _build_html(summary: dict[str, Any], output_path: Path) -> str:
   .timeline-overview-svg {{ width: 100%; max-width: 980px; height: auto; display: block; border: 1px solid #e1e4e8; border-radius: 6px; background: #fff; }}
   .timeline-label {{ font-size: 13px; fill: #57606a; font-weight: 600; }}
   .timeline-tick {{ font-size: 11px; fill: #6e7781; }}
+  .timeline-tick-centered {{ text-anchor: middle; }}
   .timeline-latency-text {{ fill: #7a1712; font-size: 11px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }}
   .timeline-legend {{ display: flex; flex-wrap: wrap; gap: .45em .9em; align-items: center; color: #57606a; font-size: 12px; }}
   .swatch {{ display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: .3em; vertical-align: -1px; }}

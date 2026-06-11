@@ -54,3 +54,5 @@ tests/fixtures/appen_en_5/
 
 .claude/
 uv.lock
+
+*.mp3

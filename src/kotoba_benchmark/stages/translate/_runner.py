@@ -210,8 +210,12 @@ async def translate_dataset_async(
     translations = [r["translation_text"] for r in results]
     meta = [
         {
-            k: r[k]
-            for k in ("attempts", "first_chunk_latency_s", "last_chunk_latency_s", "n_chunks", "ok", "output_wav")
+            **{
+                k: r[k]
+                for k in ("attempts", "first_chunk_latency_s", "last_chunk_latency_s", "n_chunks", "ok", "output_wav")
+            },
+            "backend": config.translate.backend,
+            "delay": getattr(config.translate, "delay", None),
         }
         for r in results
     ]

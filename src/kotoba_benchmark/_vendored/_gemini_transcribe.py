@@ -709,18 +709,30 @@ def _transcribe_one_index(index: int, example: dict, config: dict) -> tuple[int,
         f"audio_column={config['audio_column']} "
         f"audio={_describe_audio_input(audio_dict)}"
     )
-    timestamps = _transcribe_audio_dict(
-        audio_dict=audio_dict,
-        model=config["model"],
-        language=config["lang"],
-        temperature=config["temperature"],
-        max_output_tokens=config["max_output_tokens"],
-        thinking_level=config["thinking_level"],
-        request_timeout_seconds=config["request_timeout_seconds"],
-        max_retries=config["max_retries"],
-        retry_base_seconds=config["retry_base_seconds"],
-        debug_label=debug_label,
-    )
+    if audio_dict is None:
+        logger.warning("Gemini transcription skipped missing audio for %s", debug_label)
+        return index, []
+    try:
+        timestamps = _transcribe_audio_dict(
+            audio_dict=audio_dict,
+            model=config["model"],
+            language=config["lang"],
+            temperature=config["temperature"],
+            max_output_tokens=config["max_output_tokens"],
+            thinking_level=config["thinking_level"],
+            request_timeout_seconds=config["request_timeout_seconds"],
+            max_retries=config["max_retries"],
+            retry_base_seconds=config["retry_base_seconds"],
+            debug_label=debug_label,
+        )
+    except (KeyError, TypeError, ValueError, RuntimeError) as exc:
+        logger.warning(
+            "Gemini transcription skipped unreadable audio for %s: %s",
+            debug_label,
+            exc,
+            exc_info=True,
+        )
+        return index, []
     if not timestamps:
         logger.warning("Gemini transcription returned no timestamps for %s", debug_label)
     return index, timestamps
@@ -853,5 +865,3 @@ def transcribe_dataset_with_gemini(
         )
 
     return input_dataset.add_column(column_name, results)
-
-
